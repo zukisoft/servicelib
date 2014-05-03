@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "servicelib.h"
+#include "resource.h"
 
 #include <array>
 #include <vector>
@@ -20,14 +21,31 @@ public:
 
 };
 
-ServiceModule	module = { ServiceEntry<MyService>() };
+//template<typename... _services>
+//class Test
+//{
+//public:
+//
+//	Test() 
+//	{
+//		m_services = std::initializer_list<svctl::service_config> { (_services::getConfiguration())... };
+//	}
+//
+//private:
+//
+//	std::vector<svctl::service_config>	m_services;
+//};
+//
+//Test<MyService, MyService> mytest;
+
+//svctl::service_config& config = MyService::getConfiguration();
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
                      _In_ LPTSTR    lpCmdLine,
                      _In_ int       nCmdShow)
 {
-
+	ServiceModule<MyService> module;
 	int x =  module.WinMain(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
 
 	return x;

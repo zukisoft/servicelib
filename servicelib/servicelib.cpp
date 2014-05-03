@@ -40,7 +40,31 @@
 
 BEGIN_NAMESPACE(svctl)
 
-void service::Main(uint32_t argc, tchar_t** argv)
+//
+// >> svctl::resstring
+//
+
+// svctl::resstring::GetResourceString (private, static)
+//
+// Gets a read-only pointer to a module string resource
+//
+const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
+{
+	static const tchar_t EMPTY[] = _T("");		// Used for missing resources
+
+	// LoadString() has a neat trick to return a read-only string pointer
+	tchar_t* string = nullptr;
+	int result = LoadString(instance, id, reinterpret_cast<tchar_t*>(&string), 0);
+
+	// Return an empty string rather than a null pointer if the resource was missing
+	return (result == 0) ? EMPTY : string;
+}
+	
+//
+// >> svctl::service
+//
+
+void service::LocalMain(uint32_t argc, tchar_t** argv)
 {
 	int x = 123;
 }
@@ -50,66 +74,91 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 	int x = 123;
 }
 
-END_NAMESPACE(svctl)
-
-//-----------------------------------------------------------------------------
-// ServiceModule implementation
-//-----------------------------------------------------------------------------
-
-// ServiceModule::LocalServiceThread (private, static)
 //
-// Entry point for a local service dispatcher thread, this is used when the
-// module is executed as a normal application rather than a service
-unsigned ServiceModule::LocalServiceThread(void* arg)
+// >> svctl::service_module
+//
+
+// svctl::service_module::Dispatch
+//
+// Dispatches a filtered collection of services to either the service control
+// manager or the local dispatcher depending on the runtime context
+//
+int service_module::Dispatch(const std::vector<service_table_entry>& services)
+{
+	std::vector<SERVICE_TABLE_ENTRY>	table;			// Table of services to dispatch
+	int									result = 0;		// Result from function call
+
+	//
+	// DEFECT: These iterators are temporary and disappear along with the name strings
+	//
+
+	// Create the SERVICE_TABLE_ENTRY array for StartServiceCtrlDispatcher
+	for(auto iterator : services) table.push_back(iterator.ServiceEntry);
+	table.push_back( { nullptr, nullptr } );
+
+	// Attempt to start the service control dispatcher
+	if(!StartServiceCtrlDispatcher(table.data())) {
+	
+		result = static_cast<int>(GetLastError());		// Get the result code
+
+		// ERROR_FAILED_SERVICE_CONTROLLER_CONNECT is indicated when the module is being
+		// executed in a normal runtime context as opposed to a service runtime context
+		if(result == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) {
+	
+			// Clear and reinitialize the SERVICE_TABLE_ENTRY array using the local entries
+			// and invoke the local service dispatcher instead
+			table.clear();
+			for(auto iterator : services) table.push_back(iterator.LocalServiceEntry);
+
+			table.push_back( { nullptr, nullptr } );
+			result = StartLocalServiceDispatcher(table.data());
+		}
+	}
+
+	return result;
+}
+
+// svctl::service_module::LocalServiceThread (private, static)
+//
+// Entry point for a local service dispatcher thread
+//
+unsigned service_module::LocalServiceThread(void* arg)
 {
 	_ASSERTE(arg != nullptr);
 
 	// Cast the pointer back out into an LPSERVICE_MAIN_FUNCTION pointer and invoke
-	LPSERVICE_MAIN_FUNCTION func = reinterpret_cast<LPSERVICE_MAIN_FUNCTION>(arg);
-	func(0, nullptr);
-
-	// TODO: Need a way to provide arguments to func() !!!!
-	// TODO: This is always going to call ServiceMain() rather than Main()
-	//    switch it up in the table passed to the local dispatcher
+	reinterpret_cast<LPSERVICE_MAIN_FUNCTION>(arg)(0, nullptr);
 
 	return 0;
 }
 
-// ServiceModule::main
+// svctl::service_module::ModuleMain
 //
-// Entry point for console-based applications
-int ServiceModule::main(int argc, svctl::tchar_t** argv)
+// Implements the entry point for the service module
+//
+int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
 {
-	std::vector<SERVICE_TABLE_ENTRY> servicetable;		// Services to dispatch
+	// PROCESS COMMAND LINE ARGUMENTS TO FILTER THE LIST
 
-	// PROCESS COMMAND LINE ARGUMENTS
-	// PERFORM INITIALIZATIONS
+	std::vector<service_table_entry> filtered;
+	for(auto iterator : m_services) filtered.push_back(iterator);
 
-	// Create the SERVICE_TABLE_ENTRY array for StartServiceCtrlDispatcher
-	// TODO: This needs to be filtered
-	for(auto iterator : m_services) { servicetable.push_back(iterator); }
-	servicetable.push_back( { nullptr, nullptr } );
-
-	// Attempt to start the service control dispatcher
-	if(StartServiceCtrlDispatcher(servicetable.data())) return 0;
-
-	// ERROR_FAILED_SERVICE_CONTROLLER_CONNECT is indicated when the module
-	// is being executed as a normal application rather than a service
-	DWORD result = GetLastError();
-	return (result == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) ?
-		StartLocalServiceDispatcher(servicetable.data()) : static_cast<int>(result);
+	// Dispatch the filtered list of service classes
+	return Dispatch(filtered);
 }
 
-// ServiceModule::StartLocalServiceDispatcher (private)
+// svctl::service_module::StartLocalServiceDispatcher (private)
 //
-// Emulated service dispatcher when module is executed as a normal application
-int ServiceModule::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY servicetable)
+// Emulates the StartServiceCtrlDispatcher system function to execute a collection
+// of services in a normal user-mode application context
+//
+int service_module::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY table)
 {
 	std::vector<HANDLE>			threads;		// Worker thread handles
 	int							result;			// Result from function call
 
-	// Create a worker thread for each service in the service table
-	for(LPSERVICE_TABLE_ENTRY entry = servicetable; entry->lpServiceName; entry++) {
+	// Create a suspended worker thread for each service in the service table
+	for(LPSERVICE_TABLE_ENTRY entry = table; entry->lpServiceName; entry++) {
 
 		// Attempt to create a suspended worker thread for the service
 		uintptr_t thread = _beginthreadex(nullptr, 0, LocalServiceThread, entry->lpServiceProc, CREATE_SUSPENDED, nullptr);
@@ -129,28 +178,37 @@ int ServiceModule::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY servicetabl
 	// Start all the worker threads
 	for(auto iterator : threads) ResumeThread(iterator);
 
-	// Wait for all the worker threads to terminate
-	WaitForMultipleObjects(threads.size(), threads.data(), TRUE, INFINITE);
+	//
+	// TODO: The idea here is to have a command processor that allows the user
+	// to control the services as if they were the SCM.  For example ....
+	//
+	// start myservice [args]
+	// pause myservice
+	// list services
+	// etc.
+	//
+	// when the last service stops, the process exits just like it would normally
+	// trace messages (when I get there) would display in the console
+	//
+	// this is dummy code:
+	HWND console = GetConsoleWindow();
+	bool freeconsole = false;
+	if(console == nullptr) freeconsole = AllocConsole() ? true : false;
 
-	// Handles created with _beginthreadex() are not closed automatically when the thread ends
+	// end dummy code
+
+	// Wait for all the worker threads to terminate and closet their handles
+	WaitForMultipleObjects(threads.size(), threads.data(), TRUE, INFINITE);
 	for(auto iterator : threads) CloseHandle(iterator);
+
+	// dummy
+	if(freeconsole) FreeConsole();
+	// end dummy
+
 	return 0;
 }
 
-// ServiceModule::WinMain
-//
-// Entry point for Windows-based applications
-int ServiceModule::WinMain(HINSTANCE instance, HINSTANCE previous, svctl::tchar_t* cmdline, int show)
-{
-	UNREFERENCED_PARAMETER(instance);
-	UNREFERENCED_PARAMETER(previous);
-	UNREFERENCED_PARAMETER(cmdline);
-	UNREFERENCED_PARAMETER(show);
-
-	// Currently not doing anything with the WinMain arguments, and Visual C++
-	// provides the argc/argv arguments for main() as part of the runtime library
-	return main(__argc, __targv);
-}
+END_NAMESPACE(svctl)
 
 //-----------------------------------------------------------------------------
 

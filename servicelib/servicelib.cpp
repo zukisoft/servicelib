@@ -64,11 +64,19 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 // >> svctl::service
 //
 
+// svctl::service::LocalMain
+//
+// Service entry point when process is being run as a normal application
+//
 void service::LocalMain(uint32_t argc, tchar_t** argv)
 {
 	int x = 123;
 }
 
+// svctl::service::ServiceMain
+//
+// Service entry point when process is being run as a service
+//
 void service::ServiceMain(uint32_t argc, tchar_t** argv)
 {
 	int x = 123;

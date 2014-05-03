@@ -44,6 +44,8 @@
 #pragma warning(push, 4)
 
 //-----------------------------------------------------------------------------
+//
+//-----------------------------------------------------------------------------
 
 namespace svctl {
 
@@ -234,11 +236,15 @@ template<class... _services> class ServiceModule;
 template<class _derived>
 class Service : public svctl::service
 {
-friend class ServiceModule<_derived>;
 public:
 
 	Service()=default;
 	virtual ~Service()=default;
+
+	// s_tableentry
+	//
+	// Container for the static service class data
+	static svctl::service_table_entry s_tableentry;
 
 private:
 
@@ -259,11 +265,6 @@ private:
 	//
 	// Service class entry point when running as a service
 	static void WINAPI StaticServiceMain(DWORD argc, LPTSTR* argv);
-
-	// s_tableentry
-	//
-	// Container for the static service class data
-	static svctl::service_table_entry s_tableentry;
 };
 
 // Service<_derived>::s_tableentry (private, static)

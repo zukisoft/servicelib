@@ -187,20 +187,20 @@ namespace svctl {
 		//
 		// Gets a SERVICE_TABLE_ENTRY for use with the local service dispatcher
 		__declspec(property(get=getLocalServiceEntry)) SERVICE_TABLE_ENTRY LocalServiceEntry;
-		SERVICE_TABLE_ENTRY getLocalServiceEntry(void) const { return SERVICE_TABLE_ENTRY { const_cast<tchar_t*>(m_name.c_str()), m_localmain }; };
+		SERVICE_TABLE_ENTRY getLocalServiceEntry(void) const { return SERVICE_TABLE_ENTRY { const_cast<tchar_t*>(m_name), m_localmain }; };
 
 		// ServiceEntry
 		//
 		// Gets a SERVICE_TABLE_ENTRY for use with the system service dispatcher
 		__declspec(property(get=getServiceEntry)) SERVICE_TABLE_ENTRY ServiceEntry;
-		SERVICE_TABLE_ENTRY getServiceEntry(void) const { return { const_cast<tchar_t*>(m_name.c_str()), m_servicemain }; };
+		SERVICE_TABLE_ENTRY getServiceEntry(void) const { return { const_cast<tchar_t*>(m_name), m_servicemain }; };
 	
 	private:
 
 		// m_name
 		//
 		// Service name
-		tstring m_name;
+		const tchar_t* m_name;
 
 		// m_servicemain
 		//

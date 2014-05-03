@@ -88,12 +88,8 @@ int service_module::Dispatch(const std::vector<service_table_entry>& services)
 	std::vector<SERVICE_TABLE_ENTRY>	table;			// Table of services to dispatch
 	int									result = 0;		// Result from function call
 
-	//
-	// DEFECT: These iterators are temporary and disappear along with the name strings
-	//
-
 	// Create the SERVICE_TABLE_ENTRY array for StartServiceCtrlDispatcher
-	for(auto iterator : services) table.push_back(iterator.ServiceEntry);
+	for(const auto& iterator : services) table.push_back(iterator.ServiceEntry);
 	table.push_back( { nullptr, nullptr } );
 
 	// Attempt to start the service control dispatcher
@@ -108,8 +104,7 @@ int service_module::Dispatch(const std::vector<service_table_entry>& services)
 			// Clear and reinitialize the SERVICE_TABLE_ENTRY array using the local entries
 			// and invoke the local service dispatcher instead
 			table.clear();
-			for(auto iterator : services) table.push_back(iterator.LocalServiceEntry);
-
+			for(const auto& iterator : services) table.push_back(iterator.LocalServiceEntry);
 			table.push_back( { nullptr, nullptr } );
 			result = StartLocalServiceDispatcher(table.data());
 		}
@@ -141,7 +136,7 @@ int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
 	// PROCESS COMMAND LINE ARGUMENTS TO FILTER THE LIST
 
 	std::vector<service_table_entry> filtered;
-	for(auto iterator : m_services) filtered.push_back(iterator);
+	for(const auto& iterator : m_services) filtered.push_back(iterator);
 
 	// Dispatch the filtered list of service classes
 	return Dispatch(filtered);
@@ -167,7 +162,7 @@ int service_module::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY table)
 			// Unable to create one of the worker threads, close out the ones that have been
 			// successfully created and bail (should probably convert errno to Win32 here)
 			_get_errno(&result);
-			for(auto iterator : threads) CloseHandle(iterator);
+			for(const auto& iterator : threads) CloseHandle(iterator);
 			return result;
 		}
 
@@ -176,7 +171,7 @@ int service_module::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY table)
 	}
 
 	// Start all the worker threads
-	for(auto iterator : threads) ResumeThread(iterator);
+	for(const auto& iterator : threads) ResumeThread(iterator);
 
 	//
 	// TODO: The idea here is to have a command processor that allows the user
@@ -199,7 +194,7 @@ int service_module::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY table)
 
 	// Wait for all the worker threads to terminate and closet their handles
 	WaitForMultipleObjects(threads.size(), threads.data(), TRUE, INFINITE);
-	for(auto iterator : threads) CloseHandle(iterator);
+	for(const auto& iterator : threads) CloseHandle(iterator);
 
 	// dummy
 	if(freeconsole) FreeConsole();

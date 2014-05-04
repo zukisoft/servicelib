@@ -32,8 +32,10 @@
 #include <tchar.h>
 
 // Standard Template Library
+#include <array>
 #include <initializer_list>
 #include <memory>
+#include <string>
 #include <vector>
 
 // Windows API
@@ -51,10 +53,13 @@ namespace svctl {
 
 	// Forward Declarations
 	//
+	struct auxiliary_state;
+	class auxiliary_state_machine;
 	class resstring;
 	class service;
 	class service_module;
 	class service_table_entry;
+	class winexception;
 
 	// svctl::char_t, svctl::tchar_t, svctl::tstring
 	//
@@ -66,6 +71,57 @@ namespace svctl {
 	typedef wchar_t			tchar_t;
 	typedef std::wstring	tstring;
 #endif
+
+	// svctl::auxiliary_state
+	//
+	// Interface used by auxiliary classes that are tied into the service via
+	// inheritance of the auxiliary_state_machine
+	struct __declspec(novtable) auxiliary_state
+	{
+		virtual void OnInitialize(const tchar_t* servicename) = 0;
+	};
+
+	// svctl::auxiliary_state_machine
+	//
+	// State machine that ties all of the auxiliary classes in a service inheritance
+	// chain together dynamically
+	class auxiliary_state_machine
+	{
+	public:
+
+		// Instance Constructor
+		//
+		auxiliary_state_machine()=default;
+
+		// Initialize
+		//
+		// Invokes all of the registered OnInitialize() methods
+		void Initialize(const tchar_t* servicename);
+
+	protected:
+
+		// RegisterAuxiliaryState
+		//
+		// Registers a derived class' auxiliary_state interface
+		void RegisterAuxiliaryState(struct auxiliary_state* instance);
+
+	private:
+
+		auxiliary_state_machine(const auxiliary_state_machine&)=delete;
+		auxiliary_state_machine& operator=(const auxiliary_state_machine&)=delete;
+
+		// m_instances
+		//
+		// Collection of registered auxiliary classes
+		std::vector<auxiliary_state*> m_instances;
+	};
+
+	// svctl::exception
+	//
+	// Service library exception class
+	class exception : public std::exception
+	{
+	};
 
 	// svctl::resstring
 	//
@@ -90,7 +146,7 @@ namespace svctl {
 	// svctl::service
 	//
 	// Base class that implements a single service instance
-	class service
+	class service : virtual private auxiliary_state_machine
 	{
 	public:
 
@@ -119,10 +175,30 @@ namespace svctl {
 		//
 		service()=default;
 
+		// GetServiceName
+		//
+		// Exposes the name of the service
+		virtual const tchar_t* GetServiceName(void) const = 0;
+
 	private:
 
 		service(const service&)=delete;
 		service& operator=(const service&)=delete;
+
+		// ControlRequest
+		//
+		// Service control request handler
+		uint32_t ControlRequest(uint32_t control, uint32_t type, void* data);
+
+		// ControlRequestCallback
+		//
+		// Service handler callback procedure registered with service control manager
+		static DWORD WINAPI ControlRequestCallback(DWORD control, DWORD type, void* data, void* context);
+
+		// m_statushandle
+		//
+		// Service status control handle returned from RegisterServiceCtrlHandlerEx
+		SERVICE_STATUS_HANDLE m_statushandle;
 	};
 
 	// svctl::service_module
@@ -215,6 +291,35 @@ namespace svctl {
 		LPSERVICE_MAIN_FUNCTION m_localmain;		
 	};
 
+	// svctl::winexception
+	//
+	// specialization of std::exception for Win32 error codes
+	class winexception : public std::exception
+	{
+	public:
+		
+		// Instance Constructors
+		//
+		explicit winexception(DWORD result);
+		explicit winexception(HRESULT hresult) : winexception(static_cast<DWORD>(hresult)) {}
+		winexception() : winexception(GetLastError()) {}
+
+		// Destructor
+		virtual ~winexception()=default;
+
+		// std::exception::what
+		//
+		// 
+		virtual const char* what() const { return m_what.c_str(); }
+
+	private:
+
+		// m_what
+		//
+		// Exception message string derived from the Win32 error code
+		std::string m_what;
+	};
+
 } // namespace svctl
 
 //
@@ -245,6 +350,14 @@ public:
 	//
 	// Container for the static service class data
 	static svctl::service_table_entry s_tableentry;
+
+protected:
+
+	// todo: fix the name clash with this and the static member, perhaps
+	// this can be gotten from a base service_config class instead, that's planned
+	// for service installation statics without having to instantiate the actual
+	// service class like the old svctl needed to do
+	virtual const svctl::tchar_t* GetServiceName(void) const { return _derived::getServiceName(); }
 
 private:
 

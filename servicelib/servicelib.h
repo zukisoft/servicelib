@@ -33,6 +33,7 @@
 
 // Standard Template Library
 #include <array>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <string>
@@ -45,9 +46,29 @@
 
 #pragma warning(push, 4)
 
+// SERVICE_ACCEPT_USERMODEREBOOT
+//
+// Missing from Windows 8.1 SDK
+#ifndef SERVICE_ACCEPT_USERMODEREBOOT
+#define SERVICE_ACCEPT_USERMODEREBOOT	0x00000800
+#endif
+
+// SERVICE_CONTROL_USERMODEREBOOT
+//
+// Missing from Windows 8.1 SDK
+#ifndef SERVICE_CONTROL_USERMODEREBOOT
+#define SERVICE_CONTROL_USERMODEREBOOT	0x00000040
+#endif
+
 //-----------------------------------------------------------------------------
 //
 //-----------------------------------------------------------------------------
+
+enum class ServiceControl;
+enum class ServiceErrorControl;
+enum class ServiceProcessType;
+enum class ServiceStartType;
+enum class ServiceStatus;
 
 namespace svctl {
 
@@ -57,7 +78,9 @@ namespace svctl {
 	class auxiliary_state_machine;
 	class resstring;
 	class service;
+	class service_config;
 	class service_module;
+	class service_status_manager;
 	class service_table_entry;
 	class winexception;
 
@@ -114,13 +137,6 @@ namespace svctl {
 		//
 		// Collection of registered auxiliary classes
 		std::vector<auxiliary_state*> m_instances;
-	};
-
-	// svctl::exception
-	//
-	// Service library exception class
-	class exception : public std::exception
-	{
 	};
 
 	// svctl::resstring
@@ -195,10 +211,62 @@ namespace svctl {
 		// Service handler callback procedure registered with service control manager
 		static DWORD WINAPI ControlRequestCallback(DWORD control, DWORD type, void* data, void* context);
 
-		// m_statushandle
+		// m_statusmgr
 		//
-		// Service status control handle returned from RegisterServiceCtrlHandlerEx
-		SERVICE_STATUS_HANDLE m_statushandle;
+		// Service status manager instance
+		std::unique_ptr<service_status_manager> m_statusmgr;
+	};
+
+	// svctl::service_config
+	//
+	// Defines all of the properties required to configure or install a service
+	// except service name and service type, which are defined as part of service
+	//
+	// TODO: where am I going with this?
+	class service_config
+	{
+	public:
+
+		//---------------------------------------------------------------------
+		// Properties
+
+		// DisplayName
+		//
+		// Gets/sets the service display name
+		__declspec(property(get=getDisplayName, put=putDisplayName)) const tchar_t* DisplayName;
+		const tchar_t* getDisplayName(void) const { return m_displayname.c_str(); }
+		void putDisplayName(const tchar_t* value) { m_displayname = value; }
+
+		// ErrorControl
+		//
+		// Gets/sets the service error control flag
+		__declspec(property(get=getErrorControl, put=putErrorControl)) ServiceErrorControl ErrorControl;
+		ServiceErrorControl getErrorControl(void) const { return m_errorcontrol; }
+		void putErrorControl(ServiceErrorControl value) { m_errorcontrol = value; }
+
+		// StartType
+		//
+		// Gets/sets the service start type
+		__declspec(property(get=getStartType, put=putStartType)) ServiceStartType StartType;
+		ServiceStartType getStartType(void) const { return m_starttype; }
+		void putStartType(ServiceStartType value) { m_starttype = value; }
+
+	private:
+
+		// m_displayname
+		//
+		// Service display name
+		tstring	m_displayname;
+
+		// m_starttype
+		//
+		// Service start type
+		ServiceStartType m_starttype;
+
+		// m_errorcontrol
+		//
+		// Service error control flag
+		ServiceErrorControl m_errorcontrol;
 	};
 
 	// svctl::service_module
@@ -247,6 +315,74 @@ namespace svctl {
 		//
 		// Collection of all service_table_entry structures for each service
 		const std::vector<service_table_entry> m_services;
+	};
+
+	// svctl::service_status_manager
+	//
+	// Manages the service status. A callback must be provided during construction to implement
+	// how the status is ultimately reported, this allows for services running under the local
+	// dispatcher to report status as they normally would.
+	//
+	// Pending statuses (SERVICE_START_PENDING et al) are handled with an automatic checkpoint
+	// mechanism that will periodically report progress until a non-pending status is reported
+	//
+	// Until the service has reached an initial SERVICE_RUNNING state, the accepted controls
+	// mask will be zeroed out so that a service will not need to deal with any race conditions
+	// during initialization.  Once that initial SERVICE_RUNNING state has been reached, however,
+	// the only controls that will be blocked are STOP, PAUSE and CONTINUE during pending state
+	// changes.  The service will have to be able to handle any other controls it's registered
+	// for or explicitly change them as necessary using the methods in the service class.
+	class service_status_manager
+	{
+	public:
+
+		// report_status_t
+		//
+		// Function that must be provided during construction to handle the reporting of a 
+		// new status to either the service control manager or the local dispatcher
+		typedef std::function<void(SERVICE_STATUS_HANDLE, SERVICE_STATUS)> report_status_t;
+
+		// Instance constructor
+		//
+		explicit service_status_manager(SERVICE_STATUS_HANDLE handle, report_status_t func) : 
+			m_reportfunc(func), m_handle(handle) {}
+
+		// Set
+		//
+		// Sets a new service status
+		void Set(ServiceStatus status);
+		void Set(ServiceStatus status, uint32_t win32exitcode);
+		void Set(ServiceStatus status, uint32_t win32exitcode, uint32_t svcexitcode);
+
+	private:
+
+		service_status_manager(const service_status_manager&)=delete;
+		service_status_manager& operator=(const service_status_manager&)=delete;
+
+		// DeriveAcceptedControlsMask
+		//
+		// Derives a SERVICE_ACCEPT_XXX mask from a ServiceControl mask
+		static uint32_t DeriveAcceptedControlsMask(uint32_t controls);
+
+		// m_acceptmask
+		//
+		// Mask of controls accepted by the service, derived from m_controlmask
+		uint32_t m_acceptmask;
+
+		// m_controlmask
+		//
+		// Mask of controls handled by the service
+		uint32_t m_controlmask;
+
+		// m_handle
+		//
+		// Handle returned from a sucessful call to RegisterServiceCtrlHandler(Ex)
+		const SERVICE_STATUS_HANDLE m_handle;
+
+		// m_reportfunc
+		//
+		// Function pointer used to report an updated service status
+		const report_status_t m_reportfunc;
 	};
 
 	// svctl::service_table_entry
@@ -409,6 +545,46 @@ void Service<_derived>::StaticServiceMain(DWORD argc, LPTSTR* argv)
 }
 
 //-----------------------------------------------------------------------------
+// ServiceControl
+//
+// Stronly typed enumeration of SERVICE_CONTROL_XXXX constants
+
+enum class ServiceControl
+{
+	Stop						= SERVICE_CONTROL_STOP,
+	Pause						= SERVICE_CONTROL_PAUSE,
+	Continue					= SERVICE_CONTROL_CONTINUE,
+	Interrogate					= SERVICE_CONTROL_INTERROGATE,
+	Shutdown					= SERVICE_CONTROL_SHUTDOWN,
+	ParameterChange				= SERVICE_CONTROL_PARAMCHANGE,
+	NetBindAdd					= SERVICE_CONTROL_NETBINDADD,
+	NetBindRemove				= SERVICE_CONTROL_NETBINDREMOVE,
+	NetBindEnable				= SERVICE_CONTROL_NETBINDENABLE,
+	NetBindDisable				= SERVICE_CONTROL_NETBINDDISABLE,
+	DeviceEvent					= SERVICE_CONTROL_DEVICEEVENT,
+	HardwareProfileChange		= SERVICE_CONTROL_HARDWAREPROFILECHANGE,
+	PowerEvent					= SERVICE_CONTROL_POWEREVENT,
+	SessionChange				= SERVICE_CONTROL_SESSIONCHANGE,
+	PreShutdown					= SERVICE_CONTROL_PRESHUTDOWN,
+	TimeChange					= SERVICE_CONTROL_TIMECHANGE,
+	TriggerEvent				= SERVICE_CONTROL_TRIGGEREVENT,
+	UserModeReboot				= SERVICE_CONTROL_USERMODEREBOOT,
+};
+
+//-----------------------------------------------------------------------------
+// ServiceErrorControl
+//
+// Strongly typed enumeration of SERVICE_ERROR constants
+
+enum class ServiceErrorControl
+{
+	Ignore			= SERVICE_ERROR_IGNORE,
+	Normal			= SERVICE_ERROR_NORMAL,
+	Severe			= SERVICE_ERROR_SEVERE,
+	Critical		= SERVICE_ERROR_CRITICAL,
+};
+
+//-----------------------------------------------------------------------------
 // ServiceModule<>
 //
 // Service process module implementation
@@ -452,6 +628,46 @@ private:
 
 	ServiceModule(const ServiceModule&)=delete;
 	ServiceModule& operator=(const ServiceModule&)=delete;
+};
+
+//-----------------------------------------------------------------------------
+// ServiceProcessType
+//
+// Strongly typed enumeration of service process type flags
+
+enum class ServiceProcessType
+{
+	Unique			= SERVICE_WIN32_OWN_PROCESS,
+	Shared			= SERVICE_WIN32_SHARE_PROCESS,
+	Interactive		= SERVICE_INTERACTIVE_PROCESS,
+};
+
+//-----------------------------------------------------------------------------
+// ServiceStartType
+//
+// Strongy typed enumeration of SERVICE_XXX_START constants
+
+enum class ServiceStartType
+{
+	Automatic		= SERVICE_AUTO_START,
+	Manual			= SERVICE_DEMAND_START,
+	Disabled		= SERVICE_DISABLED,
+};
+
+//-----------------------------------------------------------------------------
+// ServiceStatus
+//
+// Strongly typed enumeration of SERVICE_XXXX status constants
+
+enum class ServiceStatus
+{
+	Stopped				= SERVICE_STOPPED,
+	StartPending		= SERVICE_START_PENDING,
+	StopPending			= SERVICE_STOP_PENDING,
+	Running				= SERVICE_RUNNING,
+	ContinuePending		= SERVICE_CONTINUE_PENDING,
+	PausePending		= SERVICE_PAUSE_PENDING,
+	Paused				= SERVICE_PAUSED,
 };
 
 //-----------------------------------------------------------------------------

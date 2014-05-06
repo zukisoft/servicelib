@@ -46,6 +46,43 @@ BEGIN_NAMESPACE(svctl)
 // svctl::service_status_manager
 //-----------------------------------------------------------------------------
 
+service_status_manager::service_status_manager(SERVICE_STATUS_HANDLE handle, report_status_t func) : 
+	m_reportfunc(func), m_handle(handle)
+{
+	//m_event = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+}
+
+service_status_manager::~service_status_manager()
+{
+	//CloseHandle(m_event);
+}
+
+//-----------------------------------------------------------------------------
+// service_status_manager::CancelPendingStatus (private)
+//
+// Cancels a pending status worker thread operation, if running
+//
+// Arguments:
+//
+//	NONE
+//
+// >> NOTE: should be called with m_cs already entered <<
+bool service_status_manager::CancelPendingStatus(void)
+{
+	if(!m_worker.joinable()) return false;
+
+	// Signal the event object to stop the pending status thread and wait
+	if(SignalObjectAndWait(m_event, m_worker.native_handle(), INFINITE, FALSE) == WAIT_FAILED)
+		throw winexception();
+
+	m_worker.join();
+	//CloseHandle(m_worker);				// Close the worker thread object
+	//m_worker = nullptr;					// Reset worker thread pointer to NULL
+	ResetEvent(m_event);				// Reset event object signal state
+	
+	return true;
+}
+
 //-----------------------------------------------------------------------------
 // service_status_manager::DeriveAcceptedControlsMask (private, static)
 //
@@ -68,7 +105,6 @@ uint32_t service_status_manager::DeriveAcceptedControlsMask(uint32_t controls)
 	if(controls & SERVICE_CONTROL_NETBINDREMOVE)			mask |= SERVICE_ACCEPT_NETBINDCHANGE;
 	if(controls & SERVICE_CONTROL_NETBINDENABLE)			mask |= SERVICE_ACCEPT_NETBINDCHANGE;
 	if(controls & SERVICE_CONTROL_NETBINDDISABLE)			mask |= SERVICE_ACCEPT_NETBINDCHANGE;
-	// SERVICE_CONTROL_DEVICEEVENT -> Requires RegisterDeviceNotification()
 	if(controls & SERVICE_CONTROL_HARDWAREPROFILECHANGE)	mask |= SERVICE_ACCEPT_HARDWAREPROFILECHANGE;
 	if(controls & SERVICE_CONTROL_POWEREVENT)				mask |= SERVICE_ACCEPT_POWEREVENT;
 	if(controls & SERVICE_CONTROL_SESSIONCHANGE)			mask |= SERVICE_ACCEPT_SESSIONCHANGE;
@@ -78,6 +114,62 @@ uint32_t service_status_manager::DeriveAcceptedControlsMask(uint32_t controls)
 	if(controls & SERVICE_CONTROL_USERMODEREBOOT)			mask |= SERVICE_ACCEPT_USERMODEREBOOT;
 
 	return mask;
+}
+
+void service_status_manager::Set(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
+{
+	switch(status) {
+
+		// Pending status codes
+		//
+		case ServiceStatus::StartPending:
+		case ServiceStatus::StopPending:
+		case ServiceStatus::ContinuePending:
+		case ServiceStatus::PausePending:
+			SetPendingStatus(status);
+			return;
+
+		// Non-pending status codes without exit codes
+		//
+		case ServiceStatus::Running:
+		case ServiceStatus::Paused:
+			SetNonPendingStatus(status);
+			return;
+
+		// Stopped - expose the exit codes
+		case ServiceStatus::Stopped:
+			SetNonPendingStatus(status, win32exitcode, serviceexitcode);
+			return;
+
+		default: throw winexception(E_INVALIDARG);
+	}
+}
+
+void service_status_manager::SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
+{
+	auto_cs lock(m_cs);
+	CancelPendingStatus();
+	//if(m_worker) { 
+
+	//	SignalObjectAndWait(m_event, m_worker, INFINITE, FALSE);
+	//	CloseHandle(m_worker);
+	//	m_worker = nullptr;
+	//}
+}
+
+void service_status_manager::SetPendingStatus(ServiceStatus status)
+{
+	auto_cs lock(m_cs);
+	CancelPendingStatus();
+	//if(m_worker) {
+
+	//	SignalObjectAndWait(m_event, m_worker, INFINITE, FALSE);
+	//	CloseHandle(m_worker);
+	//	m_worker = nullptr;
+	//}
+
+	//ResetEvent(m_event);
+	//_beginthreadex(nullptr, blah);
 }
 
 //-----------------------------------------------------------------------------

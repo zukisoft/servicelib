@@ -37,6 +37,7 @@
 #include <initializer_list>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 // Windows API
@@ -83,6 +84,10 @@ namespace svctl {
 	class service_status_manager;
 	class service_table_entry;
 	class winexception;
+	class critical_section;
+	class auto_cs;
+	class auto_reset_event;
+	class manual_reset_event;
 
 	// svctl::char_t, svctl::tchar_t, svctl::tstring
 	//
@@ -137,6 +142,151 @@ namespace svctl {
 		//
 		// Collection of registered auxiliary classes
 		std::vector<auxiliary_state*> m_instances;
+	};
+
+	// svctl::winexception
+	//
+	// specialization of std::exception for Win32 error codes
+	class winexception : public std::exception
+	{
+	public:
+		
+		// Instance Constructors
+		//
+		explicit winexception(DWORD result);
+		explicit winexception(HRESULT hresult) : winexception(static_cast<DWORD>(hresult)) {}
+		winexception() : winexception(GetLastError()) {}
+
+		// Destructor
+		virtual ~winexception()=default;
+
+		// std::exception::what
+		//
+		// 
+		virtual const char* what() const { return m_what.c_str(); }
+
+	private:
+
+		// m_what
+		//
+		// Exception message string derived from the Win32 error code
+		std::string m_what;
+	};
+
+	// svctl::event_type
+	//
+	// Constant used to define the type of event created by svctl::event<>
+	enum class event_type
+	{
+		AutomaticReset	= FALSE,
+		ManualReset		= TRUE,
+	};
+
+	// svctl::event
+	//
+	// Wrapper around an unnamed Win32 Event synchronization object
+	template<event_type _type>
+	class event
+	{
+	public:
+
+		// Instance Constructors
+		//
+		event() : event(false) {}
+		event(bool signaled)
+		{
+			// Create the underlying Win32 event object
+			m_handle = CreateEvent(nullptr, static_cast<BOOL>(_type), (signaled) ? TRUE : FALSE, nullptr);
+			if(m_handle == nullptr) throw winexception();
+		}
+
+		// Destructor
+		//
+		~event() { CloseHandle(m_handle); }
+
+		// operator HANDLE()
+		//
+		// Converts this instance into a HANDLE
+		operator HANDLE() const { return m_handle; }
+
+		// Pulse
+		//
+		// Releases any threads waiting on this event object to be signaled
+		void Pulse(void) const { if(!PulseEvent(m_handle)) throw winexception(); }
+
+		// Reset
+		//
+		// Resets the event to a non-signaled state
+		void Reset(void) const { if(!ResetEvent(m_handle)) throw winexception(); }
+
+	private:
+
+		event(const event&)=delete;
+		event& operator=(const event&)=delete;
+
+		// m_handle
+		//
+		// Event kernel object handle
+		HANDLE m_handle;
+	};
+
+	// svctl::critical_section
+	//
+	// Win32 CRITICAL_SECTION wrapper class
+	class critical_section
+	{
+	public:
+
+		// Instance Constructor / Destructor
+		//
+		critical_section() { InitializeCriticalSection(&m_cs); }
+		~critical_section() { DeleteCriticalSection(&m_cs); }
+
+		// Enter
+		//
+		// Enters the critical section
+		void Enter(void) const { EnterCriticalSection(&m_cs); }
+
+		// Leave
+		//
+		// Leaves the critical section
+		void Leave(void) const { LeaveCriticalSection(&m_cs); }
+
+	private:
+
+		critical_section(const critical_section&)=delete;
+		critical_section& operator=(const critical_section& rhs)=delete;
+	
+		// m_cs
+		//
+		// Contained CRITICAL_SECTION synchronization
+		mutable CRITICAL_SECTION m_cs;
+	};
+
+	// svctl::auto_cs
+	//
+	// Provides a stack-based automatic enter/leave wrapper around a critical_section
+	class auto_cs
+	{
+	public:
+
+		// Constructor / Destructor
+		//
+		explicit auto_cs(const critical_section& cs) : m_cs(cs) { m_cs.Enter(); }
+		~auto_cs() { m_cs.Leave(); }
+
+	private:
+
+		auto_cs(const auto_cs&)=delete;
+		auto_cs& operator=(const auto_cs&)=delete;
+
+		//-----------------------------------------------------------------------
+		// Member Variables
+
+		// m_cs
+		//
+		// Reference to the critical_section object
+		const critical_section&	m_cs;
 	};
 
 	// svctl::resstring
@@ -344,14 +494,17 @@ namespace svctl {
 
 		// Instance constructor
 		//
-		explicit service_status_manager(SERVICE_STATUS_HANDLE handle, report_status_t func) : 
-			m_reportfunc(func), m_handle(handle) {}
+		explicit service_status_manager(SERVICE_STATUS_HANDLE handle, report_status_t func);
+
+		// Destructor
+		//
+		~service_status_manager();
 
 		// Set
 		//
 		// Sets a new service status
-		void Set(ServiceStatus status);
-		void Set(ServiceStatus status, uint32_t win32exitcode);
+		void Set(ServiceStatus status) { Set(status, NO_ERROR, NO_ERROR); }
+		//void Set(ServiceStatus status, uint32_t win32exitcode);  // <=-- todo: can I differentiate between win32 and service specific codes
 		void Set(ServiceStatus status, uint32_t win32exitcode, uint32_t svcexitcode);
 
 	private:
@@ -359,10 +512,31 @@ namespace svctl {
 		service_status_manager(const service_status_manager&)=delete;
 		service_status_manager& operator=(const service_status_manager&)=delete;
 
+		// CancelPendingStatus
+		//
+		// Cancels an active pending status operation
+		bool CancelPendingStatus(void);
+
 		// DeriveAcceptedControlsMask
 		//
 		// Derives a SERVICE_ACCEPT_XXX mask from a ServiceControl mask
 		static uint32_t DeriveAcceptedControlsMask(uint32_t controls);
+
+		// SetNonPendingStatus
+		//
+		// Sets a non-pending status
+		void SetNonPendingStatus(ServiceStatus status) { SetNonPendingStatus(status, NO_ERROR, NO_ERROR); }
+		void SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+		// SetPendingStatus
+		//
+		// Sets an auto-checkpoint pending status
+		void SetPendingStatus(ServiceStatus status);
+
+		critical_section m_cs;
+		std::thread m_worker;
+		event<event_type::ManualReset> m_event;
+
 
 		// m_acceptmask
 		//
@@ -425,35 +599,6 @@ namespace svctl {
 		//
 		// Pointer to the service's static LocalMain() entry point
 		LPSERVICE_MAIN_FUNCTION m_localmain;		
-	};
-
-	// svctl::winexception
-	//
-	// specialization of std::exception for Win32 error codes
-	class winexception : public std::exception
-	{
-	public:
-		
-		// Instance Constructors
-		//
-		explicit winexception(DWORD result);
-		explicit winexception(HRESULT hresult) : winexception(static_cast<DWORD>(hresult)) {}
-		winexception() : winexception(GetLastError()) {}
-
-		// Destructor
-		virtual ~winexception()=default;
-
-		// std::exception::what
-		//
-		// 
-		virtual const char* what() const { return m_what.c_str(); }
-
-	private:
-
-		// m_what
-		//
-		// Exception message string derived from the Win32 error code
-		std::string m_what;
 	};
 
 } // namespace svctl

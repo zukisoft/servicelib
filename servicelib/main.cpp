@@ -4,6 +4,8 @@
 #include "stdafx.h"
 #include "servicelib.h"
 #include "resource.h"
+#include <thread>
+#include <mutex>
 
 ////////////////////////////////////////////////////
 
@@ -113,6 +115,14 @@ typedef svctl::tchar_t tchar_t;
 
 // }
 
+	bool test(int x, void* p)
+	{
+		uintptr_t x2 = uintptr_t(p);
+		x2 += x;
+
+		return false;
+	}
+
 /////////////////////////////////////////////////////////////////
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
@@ -125,6 +135,14 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	_CrtSetDbgFlag(nDbgFlags);								// Set the new flags
 
 #endif	// _DEBUG
+
+	std::thread mythread(test, 123, &nCmdShow);
+	WaitForSingleObject(mythread.native_handle(), INFINITE);
+	bool b = mythread.joinable();
+	mythread.join();
+	b = mythread.joinable();
+	HANDLE h = mythread.native_handle();
+
 
 	//MyTest myservice;
 	//myservice.Initialize();

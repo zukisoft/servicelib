@@ -106,6 +106,10 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 }
 
 //-----------------------------------------------------------------------------
+// svctl::service
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
 // svctl::winexception
 //-----------------------------------------------------------------------------
 
@@ -116,14 +120,14 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //
 //	result		- Win32 error code
 
-winexception::winexception(DWORD result)
+winexception::winexception(DWORD result) : m_code(result)
 {
-	LPSTR				formatted;				// Formatted message
+	char_t*				formatted;				// Formatted message
 
 	// Invoke FormatMessageA to convert the system error code into an ANSI string; use a lame
 	// generic 'unknown' string for any codes that cannot be looked up successfully
 	if(FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, nullptr, result,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<LPSTR>(&formatted), 0, nullptr)) {
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<char_t*>(&formatted), 0, nullptr)) {
 		
 		m_what = formatted;						// Store the formatted message string
 		LocalFree(formatted);					// Release FormatMessage() allocated buffer

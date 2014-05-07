@@ -13,11 +13,17 @@ class MyService : public Service<MyService>
 {
 public:
 
-	virtual uint32_t Run(uint32_t argc, svctl::tchar_t** argv)
+	uint32_t Initialize(uint32_t argc, svctl::tchar_t** argv)
+	{
+		return NO_ERROR;
+	}
+
+	uint32_t Run()
 	{
 		return 0;
 	}
 
+	void Terminate(void) {}
 };
 
 ////////////////////////////////////////////////////////////////
@@ -115,13 +121,6 @@ typedef svctl::tchar_t tchar_t;
 
 // }
 
-	bool test(int x, void* p)
-	{
-		uintptr_t x2 = uintptr_t(p);
-		x2 += x;
-
-		return false;
-	}
 
 /////////////////////////////////////////////////////////////////
 
@@ -136,13 +135,11 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	std::thread mythread(test, 123, &nCmdShow);
-	WaitForSingleObject(mythread.native_handle(), INFINITE);
-	bool b = mythread.joinable();
-	mythread.join();
-	b = mythread.joinable();
-	HANDLE h = mythread.native_handle();
+	//int val = 123;
+	//TestFunc myfunc = [=]() -> int { return val; };
 
+	//int x = myfunc();
+	//int y = myfunc();
 
 	//MyTest myservice;
 	//myservice.Initialize();

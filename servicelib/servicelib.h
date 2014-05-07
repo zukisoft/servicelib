@@ -148,7 +148,6 @@ namespace svctl {
 	class service;
 	class service_config;
 	class service_module;
-	class service_status_manager;
 	class service_table_entry;
 
 	//
@@ -175,7 +174,7 @@ namespace svctl {
 	//
 	// Function used to report a service status to either the service control manager
 	// or the local service dispatcher
-	typedef std::function<void(SERVICE_STATUS_HANDLE, const SERVICE_STATUS&)> report_status_func;
+	typedef std::function<void(SERVICE_STATUS&)> report_status_func;
 
 	// svctl::signal_type
 	//
@@ -205,12 +204,22 @@ namespace svctl {
 		// Destructor
 		virtual ~winexception()=default;
 
+		// code
+		//
+		// Exposes the Win32 error code used to construct the exception
+		DWORD code() const { return m_code; }
+
 		// std::exception::what
 		//
 		// Exposes a string-based representation of the exception (ANSI only)
 		virtual const char_t* what() const { return m_what.c_str(); }
 
 	private:
+
+		// m_code
+		//
+		// Underlying error code
+		DWORD m_code;
 
 		// m_what
 		//
@@ -303,7 +312,7 @@ namespace svctl {
 	{
 	public:
 
-		// Constructors / Destructor
+		// Constructors
 		signal() : signal(false) {}
 		signal(bool signaled)
 		{
@@ -312,6 +321,7 @@ namespace svctl {
 			if(m_handle == nullptr) throw winexception();
 		}
 
+		// Destructor
 		~signal() { CloseHandle(m_handle); }
 
 		// operator HANDLE()
@@ -408,16 +418,13 @@ namespace svctl {
 		// LocalMain
 		//
 		// Service entry point invoked when running as a normal process
+		// TODO: make private? -- screws with unique_ptr in Service<xxxxx>
 		void LocalMain(uint32_t argc, tchar_t** argv);
-
-		// Run
-		//
-		// Main service loop
-		virtual uint32_t Run(uint32_t argc, tchar_t** argv) = 0;
 
 		// ServiceMain
 		//
 		// Service entry point invoked when running as a service
+		// TODO: make private? -- screws with unique_ptr in Service<xxxxx>
 		void ServiceMain(uint32_t argc, tchar_t** argv);
 
 	protected:
@@ -426,18 +433,57 @@ namespace svctl {
 		//
 		service()=default;
 
+		///////////////////////////////////
 		// GetServiceName
 		//
 		// Exposes the name of the service
 		virtual const tchar_t* GetServiceName(void) const = 0;
 
 		virtual ServiceProcessType GetServiceType(void) const = 0;
+		//////////////////////////
+
+		// Initialize
+		//
+		// Invoked when the service is being initialized; optional
+		virtual uint32_t Initialize(uint32_t argc, tchar_t** argv);
+
+		// IsStatusChangePending
+		//
+		// Determines if a pending status change is in process; could be useful for
+		// the derived service to know this when handling certain controls
+		bool IsStatusChangePending(void) { return m_statusworker.joinable(); }
+
+		// Run
+		//
+		// Main service loop; must be implemented in the derived class
+		virtual uint32_t Run(void) = 0;
+
+		// Terminate
+		//
+		// Invoked when the service is being terminated; optional
+		virtual void Terminate(void);
 
 	private:
 
 		service(const service&)=delete;
 		service& operator=(const service&)=delete;
 
+		// PENDING_CHECKPOINT_INTERVAL
+		//
+		// Interval at which the pending status thread will report progress
+		const uint32_t PENDING_CHECKPOINT_INTERVAL = 1000;
+
+		// PENDING_WAIT_HINT
+		//
+		// Standard wait hint used when a pending status has been set
+		const uint32_t PENDING_WAIT_HINT = 4000;
+
+		// STARTUP_WAIT_HINT
+		//
+		// Wait hint used during the initial service START_PENDING status
+		const uint32_t STARTUP_WAIT_HINT = 30000;
+
+		/////////////////////////////
 		// ControlRequest
 		//
 		// Service control request handler
@@ -447,64 +493,118 @@ namespace svctl {
 		//
 		// Service handler callback procedure registered with service control manager
 		static DWORD WINAPI ControlRequestCallback(DWORD control, DWORD type, void* data, void* context);
+		////////////////////////////////////
 
-		// m_statusmgr
+		// SetNonPendingStatus_l
 		//
-		// Service status manager instance
-		std::unique_ptr<service_status_manager> m_statusmgr;
+		// Sets a non-pending status; m_cs should be locked before calling
+		void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+		void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+		// SetPendingStatus_l
+		//
+		// Sets an auto-checkpoint pending status; m_cs should be locked before calling
+		void SetPendingStatus_l(ServiceStatus status);
+
+		// SetStatus
+		//
+		// Sets a new service status
+		void SetStatus(ServiceStatus status) { SetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+		void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
+		void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+		// m_acceptedcontrols
+		//
+		// Mask of controls accepted by the service
+		/*TODO const*/ uint32_t m_acceptedcontrols;
+
+		// m_name
+		//
+		// Service name
+		/*TODO const */ tstring m_name;
+
+		// m_processtype
+		//
+		// Parent service process type
+		/*TODO const*/ ServiceProcessType m_processtype;
+
+		// m_status
+		//
+		// Current service status
+		ServiceStatus m_status = ServiceStatus::Stopped;
+
+		// m_statusfunc
+		//
+		// Function pointer used to report an updated service status
+		report_status_func m_statusfunc;
+
+		// m_statuslock;
+		//
+		// CRITICAL_SECTION synchronization object for status updates
+		critical_section m_statuslock;
+
+		// m_statussignal
+		//
+		// Signal (event) object used to stop a pending status thread
+		signal<signal_type::ManualReset> m_statussignal;
+
+		// m_statusworker
+		//
+		// Pending status worker thread
+		std::thread m_statusworker;
 	};
 
-	// svctl::service_config
-	//
-	// Defines all of the properties required to configure or install a service
-	// except service name and service type, which are defined as part of service
-	//
-	// TODO: where am I going with this?
-	class service_config
-	{
-	public:
+	//// svctl::service_config
+	////
+	//// Defines all of the properties required to configure or install a service
+	//// except service name and service type, which are defined as part of service
+	////
+	//// TODO: where am I going with this?
+	//class service_config
+	//{
+	//public:
 
-		//---------------------------------------------------------------------
-		// Properties
+	//	//---------------------------------------------------------------------
+	//	// Properties
 
-		// DisplayName
-		//
-		// Gets/sets the service display name
-		__declspec(property(get=getDisplayName, put=putDisplayName)) const tchar_t* DisplayName;
-		const tchar_t* getDisplayName(void) const { return m_displayname.c_str(); }
-		void putDisplayName(const tchar_t* value) { m_displayname = value; }
+	//	// DisplayName
+	//	//
+	//	// Gets/sets the service display name
+	//	__declspec(property(get=getDisplayName, put=putDisplayName)) const tchar_t* DisplayName;
+	//	const tchar_t* getDisplayName(void) const { return m_displayname.c_str(); }
+	//	void putDisplayName(const tchar_t* value) { m_displayname = value; }
 
-		// ErrorControl
-		//
-		// Gets/sets the service error control flag
-		__declspec(property(get=getErrorControl, put=putErrorControl)) ServiceErrorControl ErrorControl;
-		ServiceErrorControl getErrorControl(void) const { return m_errorcontrol; }
-		void putErrorControl(ServiceErrorControl value) { m_errorcontrol = value; }
+	//	// ErrorControl
+	//	//
+	//	// Gets/sets the service error control flag
+	//	__declspec(property(get=getErrorControl, put=putErrorControl)) ServiceErrorControl ErrorControl;
+	//	ServiceErrorControl getErrorControl(void) const { return m_errorcontrol; }
+	//	void putErrorControl(ServiceErrorControl value) { m_errorcontrol = value; }
 
-		// StartType
-		//
-		// Gets/sets the service start type
-		__declspec(property(get=getStartType, put=putStartType)) ServiceStartType StartType;
-		ServiceStartType getStartType(void) const { return m_starttype; }
-		void putStartType(ServiceStartType value) { m_starttype = value; }
+	//	// StartType
+	//	//
+	//	// Gets/sets the service start type
+	//	__declspec(property(get=getStartType, put=putStartType)) ServiceStartType StartType;
+	//	ServiceStartType getStartType(void) const { return m_starttype; }
+	//	void putStartType(ServiceStartType value) { m_starttype = value; }
 
-	private:
+	//private:
 
-		// m_displayname
-		//
-		// Service display name
-		tstring	m_displayname;
+	//	// m_displayname
+	//	//
+	//	// Service display name
+	//	tstring	m_displayname;
 
-		// m_starttype
-		//
-		// Service start type
-		ServiceStartType m_starttype;
+	//	// m_starttype
+	//	//
+	//	// Service start type
+	//	ServiceStartType m_starttype;
 
-		// m_errorcontrol
-		//
-		// Service error control flag
-		ServiceErrorControl m_errorcontrol;
-	};
+	//	// m_errorcontrol
+	//	//
+	//	// Service error control flag
+	//	ServiceErrorControl m_errorcontrol;
+	//};
 
 	// svctl::service_module
 	//
@@ -552,118 +652,6 @@ namespace svctl {
 		//
 		// Collection of all service_table_entry structures for each service
 		const std::vector<service_table_entry> m_services;
-	};
-
-	// svctl::service_status_manager
-	//
-	// Manages the service status. A callback must be provided during construction to implement
-	// how the status is ultimately reported, this allows for services running under the local
-	// dispatcher to report status as they normally would.
-	//
-	// Pending statuses (SERVICE_START_PENDING et al) are handled with an automatic checkpoint
-	// mechanism that will periodically report progress until a non-pending status is reported
-	//
-	// Until the service has reached an initial SERVICE_RUNNING state, the accepted controls
-	// mask will be zeroed out so that a service will not need to deal with any race conditions
-	// during initialization.  Once that initial SERVICE_RUNNING state has been reached, however,
-	// the only controls that will be blocked are STOP, PAUSE and CONTINUE during pending state
-	// changes.  The service will have to be able to handle any other controls it's registered
-	// for or explicitly change them as necessary using the methods in the service class.
-	class service_status_manager
-	{
-	public:
-
-		// Constructor / Destructor
-		explicit service_status_manager(ServiceProcessType processtype, SERVICE_STATUS_HANDLE statushandle, uint32_t acceptedcontrols, report_status_func reportfunc) : 
-			m_processtype(processtype), m_statushandle(statushandle), m_acceptedcontrols(acceptedcontrols), m_reportfunc(reportfunc) {}
-		~service_status_manager()=default;
-
-		// IsStatusChangePending
-		//
-		// Determines if a status change is in process
-		bool IsStatusChangePending(void) { return m_worker.joinable(); }
-
-		// Set
-		//
-		// Sets a new service status
-		void Set(ServiceStatus status) { Set(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-		void Set(ServiceStatus status, uint32_t win32exitcode, uint32_t svcexitcode);
-
-	private:
-
-		service_status_manager(const service_status_manager&)=delete;
-		service_status_manager& operator=(const service_status_manager&)=delete;
-
-		// PENDING_CHECKPOINT_INTERVAL
-		//
-		// Interval at which the pending status thread will report progress
-		const uint32_t PENDING_CHECKPOINT_INTERVAL = 1000;
-
-		// PENDING_WAIT_HINT
-		//
-		// Standard wait hint used when a pending status has been set
-		const uint32_t PENDING_WAIT_HINT = 4000;
-
-		// STARTUP_WAIT_HINT
-		//
-		// Wait hint used during the initial service START_PENDING status
-		const uint32_t STARTUP_WAIT_HINT = 30000;
-
-		// SetNonPendingStatus_l
-		//
-		// Sets a non-pending status; m_cs should be locked before calling
-		void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-		void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
-
-		// SetPendingStatus_l
-		//
-		// Sets an auto-checkpoint pending status; m_cs should be locked before calling
-		void SetPendingStatus_l(ServiceStatus status);
-
-		// m_acceptedcontrols
-		//
-		// Mask of controls accepted by the service
-		const uint32_t m_acceptedcontrols;
-
-		// m_cs
-		//
-		// CRITICAL_SECTION synchronization object
-		critical_section m_cs;
-
-		// m_processtype
-		//
-		// Parent service process type
-		const ServiceProcessType m_processtype;
-
-		// m_reportfunc
-		//
-		// Function pointer used to report an updated service status
-		const report_status_func m_reportfunc;
-
-		// m_signal
-		//
-		// Signal (event) object used to stop a pending status thread
-		signal<signal_type::ManualReset> m_signal;
-
-		// m_startedonce
-		//
-		// Flag if the service has reached SERVICE_RUNNING at least once
-		bool m_startedonce = false;
-
-		// m_status
-		//
-		// Current service status
-		ServiceStatus m_status = ServiceStatus::Stopped;
-
-		// m_statushandle
-		//
-		// Handle returned from a sucessful call to RegisterServiceCtrlHandler(Ex)
-		const SERVICE_STATUS_HANDLE m_statushandle;
-
-		// m_worker
-		//
-		// Pending status worker thread
-		std::thread m_worker;
 	};
 
 	// svctl::service_table_entry

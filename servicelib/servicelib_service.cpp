@@ -109,14 +109,16 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 
 	// Create a service status manager for this service that will report changes
 	// directly to the service control manager
-	m_statusmgr = std::make_unique<service_status_manager>(statushandle, 
+	m_statusmgr = std::make_unique<service_status_manager>(GetServiceType(), statushandle, 0, 
 		[](SERVICE_STATUS_HANDLE handle, SERVICE_STATUS status) -> void {
 		
 		// Report the status to the service control manager
 		if(!SetServiceStatus(handle, &status)) throw winexception();
 	});
 
-	// SET SERVICE_START_PENDING
+	// Report StartPending as quickly as possible while we get things ready
+	m_statusmgr->Set(ServiceStatus::StartPending);
+
 	auxiliary_state_machine::Initialize(GetServiceName());
 
 	// OnStart(argc, argv)

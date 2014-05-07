@@ -104,7 +104,7 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 	// Return an empty string rather than a null pointer if the resource was missing
 	return (result == 0) ? EMPTY : string;
 }
-	
+
 //-----------------------------------------------------------------------------
 // svctl::winexception
 //-----------------------------------------------------------------------------

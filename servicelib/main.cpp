@@ -13,17 +13,56 @@ class MyService : public Service<MyService>
 {
 public:
 
-	uint32_t Initialize(uint32_t argc, svctl::tchar_t** argv)
+	MyService() //: myhandler(ServiceControl::Stop, std::bind(&MyService::OnStop, this))
+	{
+	}
+
+	DWORD Initialize(uint32_t argc, svctl::tchar_t** argv)
 	{
 		return NO_ERROR;
 	}
 
-	uint32_t Run()
+	DWORD Run()
+	{
+
+		//std::function<void(void)> myfunc = std::bind(&MyService::Terminate, this);
+		//myfunc();
+
+		//svctl::h2 stop(std::bind(&MyService::OnStop));
+		//stop(0, nullptr);
+
+		std::unique_ptr<svctl::control_handler> h = std::make_unique<InlineControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop);
+		//svctl::control_handler stop(InlineControlHandler(<MyService>(ServiceControl::Stop, &MyService::OnStop));
+
+		h->Invoke(this, 0, nullptr, []() -> void {
+		
+			int x = 123;
+		
+		});
+		//	svctl::data_handler_func(std::bind(&MyService::OnStop, this, std::placeholders::_1, std::placeholders::_2)));
+
+		//auto z = std::bind(&MyService::OnStop, this, std::placeholders::_1, std::placeholders::_2);
+
+		//InlineControlHandler<MyService> stop_void(ServiceControl::Stop, 
+		//	svctl::void_handler_func(std::bind(&MyService::OnStopVoid, this)));
+
+		return 0;
+	}
+
+	void OnStop(DWORD eventtype, void* eventargs)
+	{
+		int x = 123;
+		//return 0;
+	}
+
+	DWORD OnStopVoid(void)
 	{
 		return 0;
 	}
 
-	void Terminate(void) {}
+private:
+
+	//svctl::handler myhandler;
 };
 
 ////////////////////////////////////////////////////////////////
@@ -124,6 +163,8 @@ typedef svctl::tchar_t tchar_t;
 
 /////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////
+
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
 {
 
@@ -135,14 +176,9 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	//int val = 123;
-	//TestFunc myfunc = [=]() -> int { return val; };
-
-	//int x = myfunc();
-	//int y = myfunc();
-
-	//MyTest myservice;
-	//myservice.Initialize();
+	MyService service;
+	service.Run();
+	return 0;
 
 	ServiceModule<MyService> module;
 	return module.WinMain(hInstance, hPrevInstance, lpCmdLine, nCmdShow);

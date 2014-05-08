@@ -55,6 +55,8 @@ BEGIN_NAMESPACE(svctl)
 
 uint32_t service::ControlRequest(uint32_t control, uint32_t type, void* data)
 {
+	// control should be ServiceControl type now
+	if(control == SERVICE_CONTROL_INTERROGATE) return ERROR_SUCCESS;
 	return NO_ERROR;
 }
 
@@ -297,7 +299,7 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 // RETURN VALUE: Return NO_ERROR (or ERROR_SUCCESS) to continue service startup,
 // any other value will be reported to the service control manager
 
-uint32_t service::Initialize(uint32_t argc, tchar_t** argv)
+DWORD service::Initialize(uint32_t argc, tchar_t** argv)
 {
 	UNREFERENCED_PARAMETER(argc);
 	UNREFERENCED_PARAMETER(argv);

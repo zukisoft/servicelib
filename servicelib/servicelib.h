@@ -36,6 +36,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <exception>
 #include <string>
 #include <thread>
 #include <vector>
@@ -101,7 +102,7 @@ enum class ServiceErrorControl
 	Critical					= SERVICE_ERROR_CRITICAL,
 };
 
-// ::ServiceProcessType
+// ::ServiceProcessType (Bitmask)
 //
 // Strongly typed enumeration of service process type flags
 enum class ServiceProcessType
@@ -134,6 +135,39 @@ enum class ServiceStatus
 	PausePending				= SERVICE_PAUSE_PENDING,
 	Paused						= SERVICE_PAUSED,
 };
+
+// ::ServiceProcessType Bitwise Operators
+inline ServiceProcessType operator~(ServiceProcessType lhs) {
+	return static_cast<ServiceProcessType>(~static_cast<DWORD>(lhs));
+}
+
+inline ServiceProcessType operator&(ServiceProcessType lhs, ServiceProcessType rhs) {
+	return static_cast<ServiceProcessType>(static_cast<DWORD>(lhs) & (static_cast<DWORD>(rhs)));
+}
+
+inline ServiceProcessType operator|(ServiceProcessType lhs, ServiceProcessType rhs) {
+	return static_cast<ServiceProcessType>(static_cast<DWORD>(lhs) | (static_cast<DWORD>(rhs)));
+}
+
+inline ServiceProcessType operator^(ServiceProcessType lhs, ServiceProcessType rhs) {
+	return static_cast<ServiceProcessType>(static_cast<DWORD>(lhs) ^ (static_cast<DWORD>(rhs)));
+}
+
+// ::ServiceProcessType Compound Assignment Operators
+inline ServiceProcessType& operator&=(ServiceProcessType& lhs, ServiceProcessType rhs) {
+	lhs = lhs & rhs;
+	return lhs;
+}
+
+inline ServiceProcessType& operator|=(ServiceProcessType& lhs, ServiceProcessType rhs) {
+	lhs = lhs | rhs;
+	return lhs;
+}
+
+inline ServiceProcessType& operator^=(ServiceProcessType& lhs, ServiceProcessType rhs) {
+	lhs = lhs ^ rhs;
+	return lhs;
+}
 
 //-----------------------------------------------------------------------------
 // SERVICE TEMPLATE LIBRARY INTERNALS
@@ -365,7 +399,6 @@ namespace svctl {
 	// Service Classes
 	//
 
-
 	// svctl::auxiliary_state
 	//
 	// Interface used by auxiliary classes that are tied into the service via
@@ -489,29 +522,21 @@ namespace svctl {
 		virtual ServiceProcessType GetServiceType(void) const = 0;
 		//////////////////////////
 
-		// Initialize
+		// OnStart
 		//
-		// Invoked when the service is being initialized; optional
-		// TODO: make public?
-		virtual DWORD Initialize(uint32_t argc, tchar_t** argv);
+		// Invoked when the service is started; must be implemented in the service
+		virtual void OnStart(uint32_t argc, tchar_t** argv) = 0;
 
 		// IsStatusChangePending
 		//
 		// Determines if a pending status change is in process; could be useful for
 		// the derived service to know this when handling certain controls
-		bool IsStatusChangePending(void) { return m_statusworker.joinable(); }
+		bool IsStatusChangePending(void) { return (m_statusworker.joinable()); }
 
-		// Run
+		// Stop
 		//
-		// Main service loop; must be implemented in the derived class
-		// TODO: make public?
-		virtual DWORD Run(void) = 0;
-
-		// Terminate
-		//
-		// Invoked when the service is being terminated; optional
-		// TODO: make public?
-		virtual void Terminate(void);
+		// Forces the service to stop
+		void Stop(DWORD win32exitcode, DWORD serviceexitcode);
 
 	private:
 
@@ -534,15 +559,10 @@ namespace svctl {
 		const uint32_t STARTUP_WAIT_HINT = 30000;
 
 		/////////////////////////////
-		// ControlRequest
+		// ControlHandler
 		//
 		// Service control request handler
-		uint32_t ControlRequest(uint32_t control, uint32_t type, void* data);
-
-		// ControlRequestCallback
-		//
-		// Service handler callback procedure registered with service control manager
-		static DWORD WINAPI ControlRequestCallback(DWORD control, DWORD type, void* data, void* context);
+		DWORD ControlHandler(DWORD control, DWORD type, void* data);
 		////////////////////////////////////
 
 		// SetNonPendingStatus_l
@@ -566,22 +586,27 @@ namespace svctl {
 		// m_acceptedcontrols
 		//
 		// Mask of controls accepted by the service
-		/*TODO const*/ uint32_t m_acceptedcontrols;
+		/*TODO const*/ uint32_t m_acceptedcontrols = SERVICE_ACCEPT_STOP;
 
 		// m_name
 		//
 		// Service name
-		/*TODO const */ tstring m_name;
+		/*TODO const */ tstring m_name = L"MyService";
 
 		// m_processtype
 		//
 		// Parent service process type
-		/*TODO const*/ ServiceProcessType m_processtype;
+		/*TODO const*/ ServiceProcessType m_processtype = ServiceProcessType::Unique | ServiceProcessType::Interactive; //SERVICE_WIN32_OWN_PROCESS | SERVICE_INTERACTIVE_PROCESS;
 
 		// m_status
 		//
 		// Current service status
 		ServiceStatus m_status = ServiceStatus::Stopped;
+
+		// m_statusexception
+		//
+		// Holds any exception thrown by a status worker thread
+		std::exception_ptr m_statusexception;
 
 		// m_statusfunc
 		//
@@ -602,6 +627,11 @@ namespace svctl {
 		//
 		// Pending status worker thread
 		std::thread m_statusworker;
+
+		// m_stopsignal
+		//
+		// Signal (event) object used to stop the service
+		signal<signal_type::ManualReset> m_stopsignal;
 	};
 
 	//// svctl::service_config
@@ -860,9 +890,9 @@ private:
 	// getServiceName
 	//
 	// Gets the service name
-	static const svctl::tchar_t* getServiceName() { return _T("TODOCHANGEME"); }
+	static const svctl::tchar_t* getServiceName() { return _T("MyService"); }
 
-	static const ServiceProcessType getServiceType() { return ServiceProcessType::Shared; }
+	static const ServiceProcessType getServiceType() { return (ServiceProcessType)((DWORD)ServiceProcessType::Unique | (DWORD)ServiceProcessType::Interactive); }
 
 	// StaticLocalMain
 	//

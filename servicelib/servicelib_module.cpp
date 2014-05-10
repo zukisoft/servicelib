@@ -129,6 +129,9 @@ int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
 	// unregserver
 	// and so on
 
+	UNREFERENCED_PARAMETER(argc);
+	UNREFERENCED_PARAMETER(argv);
+
 	std::vector<service_table_entry> filtered;
 	for(const auto& iterator : m_services) filtered.push_back(iterator);
 

@@ -43,9 +43,9 @@ BEGIN_NAMESPACE(svctl)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// service::ControlRequest (private)
+// service::ControlHandler (private)
 //
-// Initiates a service control request
+// Handles a service control request from the service control manager
 //
 // Arguments:
 //
@@ -53,29 +53,19 @@ BEGIN_NAMESPACE(svctl)
 //	type			- Control-specific event type
 //	data			- Control-specific event data
 
-uint32_t service::ControlRequest(uint32_t control, uint32_t type, void* data)
+DWORD service::ControlHandler(DWORD control, DWORD type, void* data)
 {
-	// control should be ServiceControl type now
+	UNREFERENCED_PARAMETER(type);
+	UNREFERENCED_PARAMETER(data);
+
+	// control should be ServiceControl type now? Keep as DWORD and static_cast<>
+	// it, that way custom codes can be handled?
 	if(control == SERVICE_CONTROL_INTERROGATE) return ERROR_SUCCESS;
+
+	// TODO: only handle stop if the service implemented it
+	if(control == SERVICE_CONTROL_STOP) { m_stopsignal.Set(); return ERROR_SUCCESS; }
+
 	return NO_ERROR;
-}
-
-//-----------------------------------------------------------------------------
-// service::ControlRequestCallback (private, static)
-//
-// Control handler callback registered with the service control manager
-//
-// Arguments:
-//
-//	control			- Service control code
-//	type			- Control-specific event type
-//	data			- Control-specific event data
-//	context			- Context pointer passed into RegisterServiceCtrlHandlerEx()
-
-DWORD WINAPI service::ControlRequestCallback(DWORD control, DWORD type, void* data, void* context)
-{
-	_ASSERTE(context != nullptr);
-	return static_cast<DWORD>(reinterpret_cast<service*>(context)->ControlRequest(control, type, data));
 }
 
 //-----------------------------------------------------------------------------
@@ -90,13 +80,16 @@ DWORD WINAPI service::ControlRequestCallback(DWORD control, DWORD type, void* da
 
 void service::LocalMain(uint32_t argc, tchar_t** argv)
 {
+	UNREFERENCED_PARAMETER(argc);
+	UNREFERENCED_PARAMETER(argv);
+
 	// Create a service status report function that reports to the local dispatcher
 	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
 		// TODO
 		UNREFERENCED_PARAMETER(status);
 	};
 
-	auxiliary_state_machine::Initialize(m_name.c_str());
+	///auxiliary_state_machine::Initialize(m_name.c_str());
 }
 
 //-----------------------------------------------------------------------------
@@ -111,10 +104,12 @@ void service::LocalMain(uint32_t argc, tchar_t** argv)
 
 void service::ServiceMain(uint32_t argc, tchar_t** argv)
 {
-	uint32_t				result;				// Result from function call
+	// Define a HandlerEx callback that thunks back into this service instance
+	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
+		return reinterpret_cast<service*>(context)->ControlHandler(control, eventtype, eventdata); };
 
-	// Register the service control handler for this service
-	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), ControlRequestCallback, this);
+	// Register the service control handler for this service using the handler defined above
+	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), handler, this);
 	if(statushandle == 0) throw winexception();
 
 	// Create a service status report function that reports to the service control manager
@@ -124,36 +119,46 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 		_ASSERTE(statushandle != 0);
 		if(!SetServiceStatus(statushandle, &status)) throw winexception();
 	};
-
+	
 	try {
 
-		// Report StartPending immediately to prevent getting killed off by the system
+		// Report a status of StartPending to the service control manager
 		SetStatus(ServiceStatus::StartPending);
 
 		// Initialize the state machine and the derived service class
-		auxiliary_state_machine::Initialize(m_name.c_str());
-		result = Initialize(argc, argv);
-		if(result == 0) {
-
-			// Service is now running
-			SetStatus(ServiceStatus::Running);
-			result = Run();
-		}
+		/// TODO: auxiliary_state_machine::Initialize(m_name.c_str());
+		OnStart(argc, argv);
+		SetStatus(ServiceStatus::Running);
 		
-		// Service is stopping; terminate the service and the state machine
+		// Wait for the service to be stopped before continuing in the main thread
+		if(WaitForSingleObject(m_stopsignal, INFINITE) == WAIT_FAILED) throw winexception();
+		
+		// Service is stopping; invoke all registered STOP handlers
 		SetStatus(ServiceStatus::StopPending);
-		Terminate();
+
+		//
+		// Invoke all SERVICE_CONTROL_STOP handlers here, not in HandlerEx
+		//
+
 		/// TODO: auxiliary_state_machine::Terminate();
 
-		// Return the result code from Initialize() or Run() here, assume that it's service specific
-		SetStatus(ServiceStatus::Stopped, (result != 0) ? ERROR_SERVICE_SPECIFIC_ERROR : result, result);
+		SetStatus(ServiceStatus::Stopped);
 	}
 
 	// Set the service to STOPPED on exception.  TODO: If the service has derived
 	// from a logging/tracing class that can perhaps be used here, but as far
-	// as generic error reporting goes, stuck with SERVICE_STATUS codes ....
-	catch(winexception& ex) { SetStatus(ServiceStatus::Stopped, ex.code()); }
-	catch(...) { SetStatus(ServiceStatus::Stopped, ERROR_SERVICE_SPECIFIC_ERROR, static_cast<DWORD>(E_FAIL)); }
+	// as generic error reporting goes, stuck for now.
+	catch(winexception& ex) { 
+		
+		try { SetStatus(ServiceStatus::Stopped, ex.code()); }
+		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
+	}
+
+	catch(...) { 
+		
+		try { SetStatus(ServiceStatus::Stopped, ERROR_SERVICE_SPECIFIC_ERROR, static_cast<DWORD>(E_FAIL)); }
+		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -170,8 +175,8 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 // CAUTION: m_statuslock should be locked before calling this function
 void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
-	_ASSERTE(!m_statusfunc);								// Needs to be set
-	_ASSERTE(!m_statusworker.joinable());					// Should not be running
+	_ASSERTE(m_statusfunc);										// Needs to be set
+	_ASSERTE(!m_statusworker.joinable());						// Should not be running
 
 	SERVICE_STATUS newstatus;
 	newstatus.dwServiceType = static_cast<DWORD>(m_processtype);
@@ -196,7 +201,7 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 // CAUTION: m_statuslock should be locked before calling this function
 void service::SetPendingStatus_l(ServiceStatus status)
 {
-	_ASSERTE(!m_statusfunc);								// Needs to be set
+	_ASSERTE(m_statusfunc);									// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());					// Should not be running
 
 	// Disallow all service controls during START_PENDING and STOP_PENDING status transitions, otherwise
@@ -206,25 +211,35 @@ void service::SetPendingStatus_l(ServiceStatus status)
 		(m_acceptedcontrols & ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE));
 
 	// Kick off a new worker thread to manage the automatic checkpoint operation
-	m_statusworker = std::thread([=](void) {
+	m_statusworker = std::move(std::thread([=]() {
 
-		SERVICE_STATUS pendingstatus;
-		pendingstatus.dwServiceType = static_cast<DWORD>(m_processtype);
-		pendingstatus.dwCurrentState = static_cast<DWORD>(status);
-		pendingstatus.dwControlsAccepted = accept;
-		pendingstatus.dwWin32ExitCode = ERROR_SUCCESS;
-		pendingstatus.dwServiceSpecificExitCode = ERROR_SUCCESS;
-		pendingstatus.dwCheckPoint = 1;
-		pendingstatus.dwWaitHint = (status == ServiceStatus::StartPending) ? STARTUP_WAIT_HINT : PENDING_WAIT_HINT;
-		m_statusfunc(pendingstatus);
+		try {
 
-		// Continually report the same pending status with an incremented checkpoint until signaled
-		while(WaitForSingleObject(m_statussignal, PENDING_CHECKPOINT_INTERVAL) == WAIT_TIMEOUT) {
+			// Create and initialize a new SERVICE_STATUS for this operation
+			SERVICE_STATUS pendingstatus;
+			pendingstatus.dwServiceType = static_cast<DWORD>(m_processtype);
+			pendingstatus.dwCurrentState = static_cast<DWORD>(status);
+			pendingstatus.dwControlsAccepted = accept;
+			pendingstatus.dwWin32ExitCode = ERROR_SUCCESS;
+			pendingstatus.dwServiceSpecificExitCode = ERROR_SUCCESS;
+			pendingstatus.dwCheckPoint = 1;
+			pendingstatus.dwWaitHint = (status == ServiceStatus::StartPending) ? STARTUP_WAIT_HINT : PENDING_WAIT_HINT;
 
-			++pendingstatus.dwCheckPoint;
+			// Set the initial pending status
 			m_statusfunc(pendingstatus);
+
+			// Continually report the same pending status with an incremented checkpoint until signaled
+			while(WaitForSingleObject(m_statussignal, PENDING_CHECKPOINT_INTERVAL) == WAIT_TIMEOUT) {
+
+				++pendingstatus.dwCheckPoint;
+				m_statusfunc(pendingstatus);
+			}
 		}
-	});
+
+		// Copy any worker thread exceptions into the m_statusexception member variable,
+		// this can be checked on the next call to SetStatus()
+		catch(...) { m_statusexception = std::current_exception(); }
+	}));
 }
 
 //-----------------------------------------------------------------------------
@@ -254,6 +269,10 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 
 		m_statusworker.join();
 		m_statussignal.Reset();
+
+		// Check for the presence of an exception from the worker thread and rethrow it
+		if(m_statusexception) 
+			std::rethrow_exception(m_statusexception);
 	}
 
 	// Invoke the proper status helper based on the type of status being set
@@ -285,43 +304,14 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 	m_status = status;					// Service status has been changed
 }
 
-//-----------------------------------------------------------------------------
-// service::Initialize (protected)
-//
-// Invoked when the service is being initialized prior to Run(), the service
-// status at this point is ServiceStatus::StartPending
-//
-// Arguments:
-//
-//	argc		- Number of command line arguments
-//	argv		- Array of command line argument strings
-//
-// RETURN VALUE: Return NO_ERROR (or ERROR_SUCCESS) to continue service startup,
-// any other value will be reported to the service control manager
-
-DWORD service::Initialize(uint32_t argc, tchar_t** argv)
+/////////// TODO: Keep this?
+void service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
 {
-	UNREFERENCED_PARAMETER(argc);
-	UNREFERENCED_PARAMETER(argv);
+	UNREFERENCED_PARAMETER(win32exitcode);
+	UNREFERENCED_PARAMETER(serviceexitcode);
 
-	_ASSERTE(m_status == ServiceStatus::StartPending);
-	return ERROR_SUCCESS;
-}
-
-//-----------------------------------------------------------------------------
-// service::Terminate (protected)
-//
-// Invoked when the service is being terminated after Run() has completed, the
-// service status at this point is ServiceStatus::StopPending
-//
-// Arguments:
-//
-//	NONE
-
-void service::Terminate(void)
-{
-	_ASSERTE(m_status == ServiceStatus::StopPending);
-	return;
+	m_stopsignal.Set();
+	// Save codes here for final status call
 }
 
 END_NAMESPACE(svctl)

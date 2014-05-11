@@ -49,7 +49,9 @@
 #pragma warning(push, 4)
 
 //-----------------------------------------------------------------------------
-// GLOBAL NAMESPACE DECLARATIONS
+// GENERAL DECLARATIONS
+//
+// Namespace: (GLOBAL)
 //-----------------------------------------------------------------------------
 
 // SERVICE_ACCEPT_USERMODEREBOOT
@@ -171,6 +173,8 @@ inline ServiceProcessType& operator^=(ServiceProcessType& lhs, ServiceProcessTyp
 
 //-----------------------------------------------------------------------------
 // SERVICE TEMPLATE LIBRARY INTERNALS
+//
+// Namespace: svctl
 //-----------------------------------------------------------------------------
 
 namespace svctl {
@@ -450,7 +454,7 @@ namespace svctl {
 		// Invoke
 		//
 		// Invokes the control handler
-		virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata) = 0;
+		virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata) const = 0;
 
 		// Control
 		//
@@ -713,55 +717,69 @@ namespace svctl {
 
 } // namespace svctl
 
+//-----------------------------------------------------------------------------
+// SERVICE TEMPLATE LIBRARY
 //
-// GLOBAL NAMESPACE CLASSES
-//
-// > Public methods that match an API should use the API data type declarations,
-//   for example use LPTSTR instead of svctl::tchar_t*
-//
+// Namespace: (GLOBAL)
+//-----------------------------------------------------------------------------
 
-///////////////
-//// TODO
+//-----------------------------------------------------------------------------
+// ::ServiceControlHandler<>
+//
+// Specialization of the svctl::control_handler class that allows the derived
+// class to register it's own member functions as handler callbacks
+
 template<class _derived>
 class ServiceControlHandler : public svctl::control_handler
 {
 private:
 
-	// Handler Types
-	typedef void(_derived::*noresult_void_handler)(void);
-	typedef void(_derived::*noresult_data_handler)(DWORD, void*);
-	typedef DWORD(_derived::*result_void_handler)(void);
-	typedef DWORD(_derived::*result_data_handler)(DWORD, void*);
+	// void_handler, void_handler_ex
+	//
+	// Control handlers that always return ERROR_SUCCESS when invoked
+	typedef void(_derived::*void_handler)(void);
+	typedef void(_derived::*void_handler_ex)(DWORD, void*);
+
+	// result_handler, result_handler_ex
+	//
+	// Control handlers that need to return a DWORD result code
+	typedef DWORD(_derived::*result_handler)(void);
+	typedef DWORD(_derived::*result_handler_ex)(DWORD, void*);
 
 public:
 
 	// Instance Constructors
-	ServiceControlHandler(ServiceControl control, noresult_void_handler func) :
-		control_handler(control), m_voidfunc(std::bind(func, std::placeholders::_1)) {}
-	ServiceControlHandler(ServiceControl control, noresult_data_handler func) :
-		control_handler(control), m_datafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
-	ServiceControlHandler(ServiceControl control, result_void_handler func) :
-		control_handler(control), m_statusvoidfunc(std::bind(func, std::placeholders::_1)) {}
-	ServiceControlHandler(ServiceControl control, result_data_handler func) :
-		control_handler(control), m_statusdatafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
+	ServiceControlHandler(ServiceControl control, void_handler func) :
+		control_handler(control), m_void_handler(std::bind(func, std::placeholders::_1)) {}
+	ServiceControlHandler(ServiceControl control, void_handler_ex func) :
+		control_handler(control), m_void_handler_ex(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
+	ServiceControlHandler(ServiceControl control, result_handler func) :
+		control_handler(control), m_result_handler(std::bind(func, std::placeholders::_1)) {}
+	ServiceControlHandler(ServiceControl control, result_handler_ex func) :
+		control_handler(control), m_result_handler_ex(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
 
 	// Destructor
 	virtual ~ServiceControlHandler()=default;
 
 	// Invoke (svctl::control_handler)
 	//
-	// Invokes the control handler
-	virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata)
+	// Invokes the control handler set during handler construction
+	virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata) const
 	{
-		_ASSERTE(m_voidfunc || m_datafunc || m_statusvoidfunc || m_statusdatafunc);
+		// At least one of these is assumed to have been set during construction
+		_ASSERTE(m_void_handler || m_void_handler_ex || m_result_handler || m_result_handler_ex);
 		
+		// Generally control handlers do not need to return a status, default to ERROR_SUCCESS
 		DWORD result = ERROR_SUCCESS;
-		_derived* d = reinterpret_cast<_derived*>(instance);
 
-		if(m_voidfunc) m_voidfunc(d);
-		else if(m_datafunc) m_datafunc(d, eventtype, eventdata);
-		else if(m_statusvoidfunc) result = m_statusvoidfunc(d);
-		else if(m_statusdatafunc) result = m_statusdatafunc(d, eventtype, eventdata);
+		// Cast the void instance pointer provided back into a derived-class specific pointer
+		_derived* derived = reinterpret_cast<_derived*>(instance);
+
+		// One and only one of the member std::function instance should be set
+		if(m_void_handler) m_void_handler(derived);
+		else if(m_void_handler_ex) m_void_handler_ex(derived, eventtype, eventdata);
+		else if(m_result_handler) result = m_result_handler(derived);
+		else if(m_result_handler_ex) result = m_result_handler_ex(derived, eventtype, eventdata);
 		else throw svctl::winexception(E_UNEXPECTED);
 		
 		return result;
@@ -772,27 +790,43 @@ private:
 	ServiceControlHandler(const ServiceControlHandler&)=delete;
 	ServiceControlHandler& operator=(const ServiceControlHandler&)=delete;
 
-	// m_
+	// m_void_handler
 	//
-	// 
-	std::function<void(_derived*)> m_voidfunc;
-	std::function<void(_derived*, DWORD, void*)> m_datafunc;
-	std::function<DWORD(_derived*)> m_statusvoidfunc;
-	std::function<DWORD(_derived*, DWORD, void*)> m_statusdatafunc;
-};
-///////////////
+	// Set when a void_handler member function is provided during construction
+	const std::function<void(_derived*)> m_void_handler;
 
+	// m_void_handler_ex
+	//
+	// Set when a void_handler_ex member function is provided during construction
+	const std::function<void(_derived*, DWORD, void*)> m_void_handler_ex;
+
+	// m_result_handler
+	//
+	// Set when a result_handler function is provided during construction
+	const std::function<DWORD(_derived*)> m_result_handler;
+
+	// m_result_handler_ex
+	//
+	// Set when a result_handler_ex function is provided during construction
+	const std::function<DWORD(_derived*, DWORD, void*)> m_result_handler_ex;
+};
 
 //-----------------------------------------------------------------------------
-// Service<>
+// ::Service<>
 //
-// Primary service class implementation
+// Template-based wrapper class around the svctl::service base class; must
+// define some service specific static functions/variables to properly describe
+// the service to the template library
+
 template<class _derived>
 class Service : public svctl::service
 {
 public:
 
+	// Instance Constructor
 	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType(), _derived::s_getHandlers()) {}
+
+	// Destructor
 	virtual ~Service()=default;
 
 	// s_tableentry

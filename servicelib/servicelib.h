@@ -472,8 +472,8 @@ namespace svctl {
 
 	private:
 
-		control_handler(const control_handler&)=delete;
-		control_handler& operator=(const control_handler&)=delete;
+		control_handler(const control_handler&);
+		control_handler& operator=(const control_handler&);
 
 		// m_control
 		//
@@ -508,19 +508,10 @@ namespace svctl {
 
 		// Instance Constructor
 		//
-		service()=default;
+		service(const tchar_t* name, ServiceProcessType processtype);
 		// TODO: this needs to flesh out, load m_xxxx variables with the important
 		// stuff from the static variables, figure that out since I don't want to have
 		// a shit ton of accessor functions again like GetServiceName(), GetServiceType(), etc
-
-		///////////////////////////////////
-		// GetServiceName
-		//
-		// Exposes the name of the service
-		virtual const tchar_t* GetServiceName(void) const = 0;
-
-		virtual ServiceProcessType GetServiceType(void) const = 0;
-		//////////////////////////
 
 		// OnStart
 		//
@@ -537,6 +528,10 @@ namespace svctl {
 		//
 		// Forces the service to stop
 		void Stop(DWORD win32exitcode, DWORD serviceexitcode);
+
+		//////////////////
+		__declspec(property(get=getHandlers)) const std::vector<std::unique_ptr<control_handler>>& Handlers;
+		virtual const std::vector<std::unique_ptr<control_handler>>& getHandlers(void);
 
 	private:
 
@@ -558,12 +553,10 @@ namespace svctl {
 		// Wait hint used during the initial service START_PENDING status
 		const uint32_t STARTUP_WAIT_HINT = 30000;
 
-		/////////////////////////////
 		// ControlHandler
 		//
-		// Service control request handler
-		DWORD ControlHandler(DWORD control, DWORD type, void* data);
-		////////////////////////////////////
+		// Service control request handler method
+		DWORD ControlHandler(ServiceControl control, DWORD type, void* data);
 
 		// SetNonPendingStatus_l
 		//
@@ -596,7 +589,7 @@ namespace svctl {
 		// m_processtype
 		//
 		// Parent service process type
-		/*TODO const*/ ServiceProcessType m_processtype = ServiceProcessType::Unique | ServiceProcessType::Interactive; //SERVICE_WIN32_OWN_PROCESS | SERVICE_INTERACTIVE_PROCESS;
+		/*TODO const*/ ServiceProcessType m_processtype = ServiceProcessType::Unique;
 
 		// m_status
 		//
@@ -806,13 +799,13 @@ public:
 
 	// Instance Constructors
 	InlineControlHandler(ServiceControl control, noresult_void_handler func) :
-		control_handler(control), m_voidfunc(std::bind(func, std::placeholders::_1)) {}
+		svctl::control_handler(control), m_voidfunc(std::bind(func, std::placeholders::_1)) {}
 	InlineControlHandler(ServiceControl control, noresult_data_handler func) :
-		control_handler(control), m_datafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
+		svctl::control_handler(control), m_datafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
 	InlineControlHandler(ServiceControl control, result_void_handler func) :
-		control_handler(control), m_statusvoidfunc(std::bind(func, std::placeholders::_1)) {}
+		svctl::control_handler(control), m_statusvoidfunc(std::bind(func, std::placeholders::_1)) {}
 	InlineControlHandler(ServiceControl control, result_data_handler func) :
-		control_handler(control), m_statusdatafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
+		svctl::control_handler(control), m_statusdatafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
 
 	// Destructor
 	virtual ~InlineControlHandler()=default;
@@ -841,8 +834,8 @@ public:
 
 private:
 
-	InlineControlHandler(const InlineControlHandler&)=delete;
-	InlineControlHandler& operator=(const InlineControlHandler&)=delete;
+	//InlineControlHandler(const InlineControlHandler&)=delete;
+	//InlineControlHandler& operator=(const InlineControlHandler&)=delete;
 
 	// m_
 	//
@@ -864,35 +857,24 @@ class Service : public svctl::service
 {
 public:
 
-	Service()=default;
+	Service() : svctl::service(getServiceName(), getProcessType()) {}
 	virtual ~Service()=default;
+
+	////////////////////
+	static const svctl::tchar_t* getServiceName() { return _T("myservice"); }
+	static const ServiceProcessType getProcessType() { return ServiceProcessType::Unique | ServiceProcessType::Interactive; }
+
+	///////////////////////
 
 	// s_tableentry
 	//
 	// Container for the static service class data
 	static svctl::service_table_entry s_tableentry;
 
-protected:
-
-	// todo: fix the name clash with this and the static member, perhaps
-	// this can be gotten from a base service_config class instead, that's planned
-	// for service installation statics without having to instantiate the actual
-	// service class like the old svctl needed to do
-	virtual const svctl::tchar_t* GetServiceName(void) const { return _derived::getServiceName(); }
-
-	virtual ServiceProcessType GetServiceType(void) const { return _derived::getServiceType(); }
-
 private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
-
-	// getServiceName
-	//
-	// Gets the service name
-	static const svctl::tchar_t* getServiceName() { return _T("MyService"); }
-
-	static const ServiceProcessType getServiceType() { return (ServiceProcessType)((DWORD)ServiceProcessType::Unique | (DWORD)ServiceProcessType::Interactive); }
 
 	// StaticLocalMain
 	//

@@ -43,6 +43,20 @@ BEGIN_NAMESPACE(svctl)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// service Constructor
+//
+// Arguments:
+//
+//	name			- Service name
+//	processtype		- Service process type
+
+service::service(const tchar_t* name, ServiceProcessType processtype) :
+	m_name(name), m_processtype(processtype)
+{
+	// TODO: accepted controls -- need to pass in the vector
+}
+
+//-----------------------------------------------------------------------------
 // service::ControlHandler (private)
 //
 // Handles a service control request from the service control manager
@@ -53,20 +67,48 @@ BEGIN_NAMESPACE(svctl)
 //	type			- Control-specific event type
 //	data			- Control-specific event data
 
-DWORD service::ControlHandler(DWORD control, DWORD type, void* data)
+DWORD service::ControlHandler(ServiceControl control, DWORD type, void* data)
 {
 	UNREFERENCED_PARAMETER(type);
 	UNREFERENCED_PARAMETER(data);
 
-	// control should be ServiceControl type now? Keep as DWORD and static_cast<>
-	// it, that way custom codes can be handled?
-	if(control == SERVICE_CONTROL_INTERROGATE) return ERROR_SUCCESS;
+	// SERVICE_CONTROL_INTERROGATE always just returns ERROR_SUCCESS
+	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
 
-	// TODO: only handle stop if the service implemented it
-	if(control == SERVICE_CONTROL_STOP) { m_stopsignal.Set(); return ERROR_SUCCESS; }
+	// SERVICE_CONTROL_STOP is special; if there are any registered handlers
+	// for this control, set the signal to break the main thread, which will then
+	// iterate and call into each handler after a STOP PENDING status has been set
+	if(control == ServiceControl::Stop) { 
 
-	return NO_ERROR;
+		// TODO: this is not done
+		//for(const auto& iterator : getHandlers()) {
+			//if(iterator->Control == ServiceControl::Stop) { m_stopsignal.Set(); return ERROR_SUCCESS; }
+		//}
+
+		m_stopsignal.Set();
+		return ERROR_SUCCESS;
+		//return ERROR_CALL_NOT_IMPLEMENTED;
+	}
+
+	for(const auto& iterator : getHandlers()) {
+
+		if(iterator->Control == control) { iterator->Invoke(this, type, data, nullptr); }
+	}
+
+	return ERROR_CALL_NOT_IMPLEMENTED;
 }
+
+//-----------------------------------------------------------------------------
+// service::getHandlers (protected, virtual)
+//
+// Gets the vector of service-specific control handlers
+
+const std::vector<std::unique_ptr<control_handler>>& service::getHandlers(void)
+{
+	static std::vector<std::unique_ptr<control_handler>> empty;
+	return empty;
+}
+
 
 //-----------------------------------------------------------------------------
 // service::LocalMain
@@ -106,7 +148,7 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 {
 	// Define a HandlerEx callback that thunks back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
-		return reinterpret_cast<service*>(context)->ControlHandler(control, eventtype, eventdata); };
+		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
 	// Register the service control handler for this service using the handler defined above
 	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), handler, this);
@@ -125,24 +167,25 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 		// Report a status of StartPending to the service control manager
 		SetStatus(ServiceStatus::StartPending);
 
-		// Initialize the state machine and the derived service class
+		// Initialize registered auxiliary base classes
 		/// TODO: auxiliary_state_machine::Initialize(m_name.c_str());
+
+		// Invoke the derived service's OnStart, when that returns service is running
 		OnStart(argc, argv);
 		SetStatus(ServiceStatus::Running);
 		
-		// Wait for the service to be stopped before continuing in the main thread
+		// Wait for the service to be stopped and set STOP_PENDING immediately
 		if(WaitForSingleObject(m_stopsignal, INFINITE) == WAIT_FAILED) throw winexception();
-		
-		// Service is stopping; invoke all registered STOP handlers
 		SetStatus(ServiceStatus::StopPending);
 
-		//
-		// Invoke all SERVICE_CONTROL_STOP handlers here, not in HandlerEx
-		//
+		// Iterate over any registered STOP handlers and invoke them during STOP_PENDING
+		for(const auto& iterator : getHandlers())
+			if(iterator->Control == ServiceControl::Stop) iterator->Invoke(this, 0, nullptr, nullptr);
 
+		// Terminate registered auxiliary state machine
 		/// TODO: auxiliary_state_machine::Terminate();
 
-		SetStatus(ServiceStatus::Stopped);
+		SetStatus(ServiceStatus::Stopped);			// Service is now stopped
 	}
 
 	// Set the service to STOPPED on exception.  TODO: If the service has derived

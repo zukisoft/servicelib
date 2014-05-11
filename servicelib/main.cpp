@@ -21,6 +21,18 @@ public:
 		UNREFERENCED_PARAMETER(argv);
 	}
 
+	void OnStop(void)
+	{
+		Sleep(10000);
+	}
+
+	virtual const std::vector<std::unique_ptr<svctl::control_handler>>& getHandlers(void)
+	{
+		static std::unique_ptr<svctl::control_handler> handlers[] = { std::make_unique<InlineControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop) };
+		static std::vector<std::unique_ptr<svctl::control_handler>> v { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) };
+		return v;
+	}
+
 private:
 
 	MyService(const MyService&)=delete;

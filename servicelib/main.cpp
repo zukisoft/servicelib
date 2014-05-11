@@ -21,6 +21,18 @@ public:
 		UNREFERENCED_PARAMETER(argv);
 	}
 
+	////////////////////
+	//const svctl::tchar_t* getName(void) const { static svctl::tstring name =  _T("myservice"); return name.c_str(); }
+
+	// DECLARE_SERVICE_NAME
+	static const svctl::tchar_t* s_getName(void) { return _T("myservice"); }
+
+	// DECLARE_SERVICE_TYPE
+	static ServiceProcessType s_getProcessType(void) { return ServiceProcessType::Unique | ServiceProcessType::Interactive; }
+
+	///////////////////////
+
+
 	void OnStop(void)
 	{
 		Sleep(10000);
@@ -31,19 +43,20 @@ public:
 		Sleep(10000);
 	}
 
-	void OnContinue(void)
+	void OnParameterChange(void)
 	{
-		Sleep(10000);
 	}
 
-	virtual const std::vector<std::unique_ptr<svctl::control_handler>>& getHandlers(void)
+	// BEGIN_CONTROL_MAP()
+	static const svctl::control_handler_table& s_getHandlers(void)
 	{
 		static std::unique_ptr<svctl::control_handler> handlers[] = { 
 			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop),
 			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Pause, &MyService::OnPause), 
+			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::ParameterChange, &MyService::OnParameterChange), 
 			//std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Continue, &MyService::OnContinue) 
 		};
-		static std::vector<std::unique_ptr<svctl::control_handler>> v { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) };
+		static svctl::control_handler_table v { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) };
 		return v;
 	}
 

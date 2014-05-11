@@ -474,6 +474,12 @@ namespace svctl {
 		const ServiceControl m_control;
 	};
 
+	// svctl::control_handler_table
+	//
+	// Typedef to clean up this declaration.  The control handler table is implemented
+	// as a vector of unique pointers to control_handler instances ...
+	typedef std::vector<std::unique_ptr<svctl::control_handler>> control_handler_table;
+
 	// svctl::service
 	//
 	// Base class that implements a single service instance
@@ -482,7 +488,6 @@ namespace svctl {
 	public:
 
 		// Destructor
-		//
 		virtual ~service()=default;
 
 		// LocalMain
@@ -498,33 +503,14 @@ namespace svctl {
 		void ServiceMain(uint32_t argc, tchar_t** argv);
 
 	protected:
-
+		
 		// Instance Constructor
-		//
-		service(const tchar_t* name, ServiceProcessType processtype);
-		// TODO: this needs to flesh out, load m_xxxx variables with the important
-		// stuff from the static variables, figure that out since I don't want to have
-		// a shit ton of accessor functions again like GetServiceName(), GetServiceType(), etc
+		service(const tchar_t* name, ServiceProcessType processtype, const control_handler_table& handlers);
 
 		// OnStart
 		//
 		// Invoked when the service is started; must be implemented in the service
 		virtual void OnStart(uint32_t argc, tchar_t** argv) = 0;
-
-		// IsStatusChangePending
-		//
-		// Determines if a pending status change is in process; could be useful for
-		// the derived service to know this when handling certain controls
-		bool IsStatusChangePending(void) { return (m_statusworker.joinable()); }
-
-		// Stop
-		//
-		// Forces the service to stop
-		void Stop(DWORD win32exitcode, DWORD serviceexitcode);
-
-		//////////////////
-		__declspec(property(get=getHandlers)) const std::vector<std::unique_ptr<control_handler>>& Handlers;
-		virtual const std::vector<std::unique_ptr<control_handler>>& getHandlers(void);
 
 	private:
 
@@ -539,12 +525,12 @@ namespace svctl {
 		// PENDING_WAIT_HINT
 		//
 		// Standard wait hint used when a pending status has been set
-		const uint32_t PENDING_WAIT_HINT = 4000;
+		const uint32_t PENDING_WAIT_HINT = 2000;
 
 		// STARTUP_WAIT_HINT
 		//
 		// Wait hint used during the initial service START_PENDING status
-		const uint32_t STARTUP_WAIT_HINT = 30000;
+		const uint32_t STARTUP_WAIT_HINT = 5000;
 
 		// ControlHandler
 		//
@@ -572,17 +558,22 @@ namespace svctl {
 		// m_acceptedcontrols
 		//
 		// Mask of controls accepted by the service
-		/*TODO const*/ uint32_t m_acceptedcontrols = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE;
+		const DWORD m_acceptedcontrols;
 
 		// m_continuesignal
 		//
 		// Signal (event) object used to continue the service when paused
 		signal<signal_type::ManualReset> m_continuesignal;
 
+		// m_handlers
+		//
+		// Service control handler table reference
+		const control_handler_table& m_handlers;
+
 		// m_name
 		//
 		// Service name
-		/*TODO const */ tstring m_name = L"MyService";
+		const tstring m_name;
 
 		// m_pausesignal
 		//
@@ -591,8 +582,8 @@ namespace svctl {
 
 		// m_processtype
 		//
-		// Parent service process type
-		/*TODO const*/ ServiceProcessType m_processtype = ServiceProcessType::Unique;
+		// Service process type
+		const ServiceProcessType m_processtype;
 
 		// m_status
 		//
@@ -629,58 +620,6 @@ namespace svctl {
 		// Signal (event) object used to stop the service
 		signal<signal_type::ManualReset> m_stopsignal;
 	};
-
-	//// svctl::service_config
-	////
-	//// Defines all of the properties required to configure or install a service
-	//// except service name and service type, which are defined as part of service
-	////
-	//// TODO: where am I going with this?
-	//class service_config
-	//{
-	//public:
-
-	//	//---------------------------------------------------------------------
-	//	// Properties
-
-	//	// DisplayName
-	//	//
-	//	// Gets/sets the service display name
-	//	__declspec(property(get=getDisplayName, put=putDisplayName)) const tchar_t* DisplayName;
-	//	const tchar_t* getDisplayName(void) const { return m_displayname.c_str(); }
-	//	void putDisplayName(const tchar_t* value) { m_displayname = value; }
-
-	//	// ErrorControl
-	//	//
-	//	// Gets/sets the service error control flag
-	//	__declspec(property(get=getErrorControl, put=putErrorControl)) ServiceErrorControl ErrorControl;
-	//	ServiceErrorControl getErrorControl(void) const { return m_errorcontrol; }
-	//	void putErrorControl(ServiceErrorControl value) { m_errorcontrol = value; }
-
-	//	// StartType
-	//	//
-	//	// Gets/sets the service start type
-	//	__declspec(property(get=getStartType, put=putStartType)) ServiceStartType StartType;
-	//	ServiceStartType getStartType(void) const { return m_starttype; }
-	//	void putStartType(ServiceStartType value) { m_starttype = value; }
-
-	//private:
-
-	//	// m_displayname
-	//	//
-	//	// Service display name
-	//	tstring	m_displayname;
-
-	//	// m_starttype
-	//	//
-	//	// Service start type
-	//	ServiceStartType m_starttype;
-
-	//	// m_errorcontrol
-	//	//
-	//	// Service error control flag
-	//	ServiceErrorControl m_errorcontrol;
-	//};
 
 	// svctl::service_module
 	//
@@ -781,12 +720,8 @@ namespace svctl {
 //   for example use LPTSTR instead of svctl::tchar_t*
 //
 
-// Forward Declarations
-//
-template<class _derived> class Service;
-template<class... _services> class ServiceModule;
-
 ///////////////
+//// TODO
 template<class _derived>
 class ServiceControlHandler : public svctl::control_handler
 {
@@ -857,14 +792,8 @@ class Service : public svctl::service
 {
 public:
 
-	Service() : svctl::service(getServiceName(), getProcessType()) {}
+	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType(), _derived::s_getHandlers()) {}
 	virtual ~Service()=default;
-
-	////////////////////
-	static const svctl::tchar_t* getServiceName() { return _T("myservice"); }
-	static const ServiceProcessType getProcessType() { return ServiceProcessType::Unique | ServiceProcessType::Interactive; }
-
-	///////////////////////
 
 	// s_tableentry
 	//
@@ -891,7 +820,7 @@ private:
 //
 // Defines the static service_table_entry information for this service class
 template<class _derived>
-svctl::service_table_entry Service<_derived>::s_tableentry(_derived::getServiceName(), _derived::StaticServiceMain, _derived::StaticLocalMain);
+svctl::service_table_entry Service<_derived>::s_tableentry(_derived::s_getName(), _derived::StaticServiceMain, _derived::StaticLocalMain);
 
 // Service<_derived>::StaticLocalMain (private, static)
 //

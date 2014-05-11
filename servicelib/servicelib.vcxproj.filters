@@ -35,16 +35,10 @@
     <ClCompile Include="servicelib.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="servicelib_config.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="servicelib_module.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="servicelib_service.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="service_status.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -48,13 +48,39 @@ BEGIN_NAMESPACE(svctl)
 // Arguments:
 //
 //	name			- Service name
-//	processtype		- Service process type
+//	processtype		- Servuice process type
+//	handlers		- Service control handler table
 
-service::service(const tchar_t* name, ServiceProcessType processtype) :
-	m_name(name), m_processtype(processtype)
-{
-	// TODO: accepted controls -- need to pass in the vector
-}
+service::service(const tchar_t* name, ServiceProcessType processtype, const control_handler_table& handlers) 
+	: m_name(name), m_processtype(processtype), m_handlers(handlers), m_acceptedcontrols([&]() -> DWORD {
+
+	DWORD accept = 0;
+
+	// Derive what controls this service should report based on what service control handlers
+	// have been implemented in the derived class
+	for(const auto& iterator : handlers) {
+
+		if(iterator->Control == ServiceControl::Stop)						accept |= SERVICE_ACCEPT_STOP;
+		else if(iterator->Control == ServiceControl::Pause)					accept |= SERVICE_ACCEPT_PAUSE_CONTINUE;
+		else if(iterator->Control == ServiceControl::Continue)				accept |= SERVICE_ACCEPT_PAUSE_CONTINUE;
+		else if(iterator->Control == ServiceControl::Shutdown)				accept |= SERVICE_ACCEPT_SHUTDOWN;
+		else if(iterator->Control == ServiceControl::ParameterChange)		accept |= SERVICE_ACCEPT_PARAMCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindAdd)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindRemove)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindEnable)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindDisable)		accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::HardwareProfileChange)	accept |= SERVICE_ACCEPT_HARDWAREPROFILECHANGE;
+		else if(iterator->Control == ServiceControl::PowerEvent)			accept |= SERVICE_ACCEPT_POWEREVENT;
+		else if(iterator->Control == ServiceControl::SessionChange)			accept |= SERVICE_ACCEPT_SESSIONCHANGE;
+		else if(iterator->Control == ServiceControl::PreShutdown)			accept |= SERVICE_ACCEPT_PRESHUTDOWN;
+		else if(iterator->Control == ServiceControl::TimeChange)			accept |= SERVICE_ACCEPT_TIMECHANGE;
+		else if(iterator->Control == ServiceControl::TriggerEvent)			accept |= SERVICE_ACCEPT_TRIGGEREVENT;
+		else if(iterator->Control == ServiceControl::UserModeReboot)		accept |= SERVICE_ACCEPT_USERMODEREBOOT;
+	}
+
+	return accept;						// Return the generated bitmask
+
+}()) {}
 
 //-----------------------------------------------------------------------------
 // service::ControlHandler (private)
@@ -101,7 +127,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Iterate over all of the implemented control handlers and invoke each of them
 	// in the order in which they appear in the control handler vector<>
 	bool handled = false;
-	for(const auto& iterator : getHandlers()) {
+	for(const auto& iterator : m_handlers) {
 
 		if(iterator->Control != control) continue;
 
@@ -117,18 +143,6 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// and ERROR_CALL_NOT_IMPLEMENTED if no handler was present for the control
 	return (handled) ? ERROR_SUCCESS : ERROR_CALL_NOT_IMPLEMENTED;
 }
-
-//-----------------------------------------------------------------------------
-// service::getHandlers (protected, virtual)
-//
-// Gets the vector of service-specific control handlers
-
-const std::vector<std::unique_ptr<control_handler>>& service::getHandlers(void)
-{
-	static std::vector<std::unique_ptr<control_handler>> empty;
-	return empty;
-}
-
 
 //-----------------------------------------------------------------------------
 // service::LocalMain
@@ -202,7 +216,7 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 			SetStatus(pending);						// Set the specified pending status
 
 			// Iterate over all the derived class handlers and invoke each relevant one in the order they appear
-			for(const auto& handler : getHandlers()) { if(handler->Control == control) handler->Invoke(this, 0, nullptr); }
+			for(const auto& handler : m_handlers) { if(handler->Control == control) handler->Invoke(this, 0, nullptr); }
 
 			SetStatus(final);						// Set final status
 			signal.Reset();							// Reset the kernel event object to unsignaled
@@ -298,10 +312,9 @@ void service::SetPendingStatus_l(ServiceStatus status)
 	_ASSERTE(m_statusfunc);									// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());					// Should not be running
 
-
-	////// TODO: this is not right
-	uint32_t accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 0 :
-		(m_acceptedcontrols & ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE));
+	// Block all controls during SERVICE_START_PENDING and SERVICE_STOP_PENDING only
+	DWORD accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 
+		0 : m_acceptedcontrols;
 
 	// Kick off a new worker thread to manage the automatic checkpoint operation
 	m_statusworker = std::move(std::thread([=]() {
@@ -395,16 +408,6 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 	}
 	
 	m_status = status;					// Service status has been changed
-}
-
-/////////// TODO: Keep this?
-void service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
-{
-	UNREFERENCED_PARAMETER(win32exitcode);
-	UNREFERENCED_PARAMETER(serviceexitcode);
-
-	m_stopsignal.Set();
-	// Save codes here for final status call
 }
 
 END_NAMESPACE(svctl)

@@ -64,38 +64,58 @@ service::service(const tchar_t* name, ServiceProcessType processtype) :
 // Arguments:
 //
 //	control			- Service control code
-//	type			- Control-specific event type
-//	data			- Control-specific event data
+//	eventtype		- Control-specific event type
+//	eventdata		- Control-specific event data
 
-DWORD service::ControlHandler(ServiceControl control, DWORD type, void* data)
+DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata)
 {
-	UNREFERENCED_PARAMETER(type);
-	UNREFERENCED_PARAMETER(data);
+	// Get the current status of the service (note: This is technically a race
+	// condition with SetStatus(), but should be fine here; use m_statuslock if not)
+	ServiceStatus currentstatus = m_status;
 
-	// SERVICE_CONTROL_INTERROGATE always just returns ERROR_SUCCESS
-	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
+	// Nothing should be coming in from the service control manager when stopped
+	if(currentstatus == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
 
-	// SERVICE_CONTROL_STOP is special; if there are any registered handlers
-	// for this control, set the signal to break the main thread, which will then
-	// iterate and call into each handler after a STOP PENDING status has been set
-	if(control == ServiceControl::Stop) { 
+	// PAUSE controls are allowed to be redundant by the service control manager
+	// and should not be accepted if the service is not in a RUNNING state
+	if(control == ServiceControl::Pause) {
 
-		// TODO: this is not done
-		//for(const auto& iterator : getHandlers()) {
-			//if(iterator->Control == ServiceControl::Stop) { m_stopsignal.Set(); return ERROR_SUCCESS; }
-		//}
-
-		m_stopsignal.Set();
-		return ERROR_SUCCESS;
-		//return ERROR_CALL_NOT_IMPLEMENTED;
+		if((currentstatus == ServiceStatus::Paused) || (currentstatus == ServiceStatus::PausePending)) return ERROR_SUCCESS;
+		if(currentstatus != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
 	}
 
+	// CONTINUE controls are allowed to be redundant by the service control manager
+	// and should not be accepted if the service is not in a PAUSED state
+	else if(control == ServiceControl::Continue) {
+
+		if((currentstatus == ServiceStatus::Running) || (currentstatus == ServiceStatus::ContinuePending)) return ERROR_SUCCESS;
+		if(currentstatus != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
+	}
+
+	// INTERROGATE, STOP, PAUSE and CONTINUE are all special case handlers
+	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
+	else if(control == ServiceControl::Stop) { m_stopsignal.Set(); return ERROR_SUCCESS; }
+	else if(control == ServiceControl::Pause) { m_pausesignal.Set(); return ERROR_SUCCESS; }
+	else if(control == ServiceControl::Continue) { m_continuesignal.Set(); return ERROR_SUCCESS; }
+
+	// Iterate over all of the implemented control handlers and invoke each of them
+	// in the order in which they appear in the control handler vector<>
+	bool handled = false;
 	for(const auto& iterator : getHandlers()) {
 
-		if(iterator->Control == control) { iterator->Invoke(this, type, data, nullptr); }
+		if(iterator->Control != control) continue;
+
+		// Invoke the service control handler; if a non-zero result is returned stop
+		// processing them and return that result back to the service control manager
+		DWORD result = iterator->Invoke(this, eventtype, eventdata);
+		if(result != ERROR_SUCCESS) return result;
+		
+		handled = true;						// At least one handler was successfully invoked
 	}
 
-	return ERROR_CALL_NOT_IMPLEMENTED;
+	// Default for most service controls is to return ERROR_SUCCESS if it was handled
+	// and ERROR_CALL_NOT_IMPLEMENTED if no handler was present for the control
+	return (handled) ? ERROR_SUCCESS : ERROR_CALL_NOT_IMPLEMENTED;
 }
 
 //-----------------------------------------------------------------------------
@@ -173,19 +193,48 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 		// Invoke the derived service's OnStart, when that returns service is running
 		OnStart(argc, argv);
 		SetStatus(ServiceStatus::Running);
-		
-		// Wait for the service to be stopped and set STOP_PENDING immediately
-		if(WaitForSingleObject(m_stopsignal, INFINITE) == WAIT_FAILED) throw winexception();
-		SetStatus(ServiceStatus::StopPending);
 
-		// Iterate over any registered STOP handlers and invoke them during STOP_PENDING
-		for(const auto& iterator : getHandlers())
-			if(iterator->Control == ServiceControl::Stop) iterator->Invoke(this, 0, nullptr, nullptr);
+		// primary_handler lambda; Used to set a pending status, invoke all relevant handler functions for the
+		// signaled control, set the proper non-pending status and reset the event object when finished
+		std::function<void(ServiceStatus, ServiceControl, ServiceStatus, const signal<signal_type::ManualReset>&)> primary_handler = 
+			[this](ServiceStatus pending, ServiceControl control, ServiceStatus final, const signal<signal_type::ManualReset>& signal) -> void {
 
-		// Terminate registered auxiliary state machine
-		/// TODO: auxiliary_state_machine::Terminate();
+			SetStatus(pending);						// Set the specified pending status
 
-		SetStatus(ServiceStatus::Stopped);			// Service is now stopped
+			// Iterate over all the derived class handlers and invoke each relevant one in the order they appear
+			for(const auto& handler : getHandlers()) { if(handler->Control == control) handler->Invoke(this, 0, nullptr); }
+
+			SetStatus(final);						// Set final status
+			signal.Reset();							// Reset the kernel event object to unsignaled
+		};
+
+		// The primary service control functions (STOP, PAUSE and CONTINUE) are handled here in the
+		// main service thread rather than in the control handler, and are signaled via event objects
+		std::array<HANDLE, 3> signals = { m_stopsignal, m_pausesignal, m_continuesignal };
+		DWORD wait = WAIT_FAILED;
+
+		// Only loop until the STOP event has been signaled
+		while(wait != WAIT_OBJECT_0) {
+
+			// Wait for one of the three primary service control events to be signaled
+			wait = WaitForMultipleObjects(signals.size(), signals.data(), FALSE, INFINITE);
+
+			// WAIT_OBJECT_0 --> ServiceControl::Stop
+			if(wait == WAIT_OBJECT_0)
+				primary_handler(ServiceStatus::StopPending, ServiceControl::Stop, ServiceStatus::Stopped, m_stopsignal);
+			
+			// WAIT_OBJECT_0 + 1 --> ServiceControl::Pause
+			else if(wait == WAIT_OBJECT_0 + 1)
+				primary_handler(ServiceStatus::PausePending, ServiceControl::Pause, ServiceStatus::Paused, m_pausesignal);
+
+			// WAIT_OBJECT_0 + 2 --> ServiceControl::Continue
+			else if(wait == WAIT_OBJECT_0 + 2)
+				primary_handler(ServiceStatus::ContinuePending, ServiceControl::Continue, ServiceStatus::Running, m_continuesignal);
+
+			// WAIT_FAILED --> Error
+			else if(wait == WAIT_FAILED) throw winexception();
+			else throw winexception(E_FAIL);
+		}
 	}
 
 	// Set the service to STOPPED on exception.  TODO: If the service has derived
@@ -221,6 +270,7 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 	_ASSERTE(m_statusfunc);										// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());						// Should not be running
 
+	// Create and initialize a new SERVICE_STATUS for this operation
 	SERVICE_STATUS newstatus;
 	newstatus.dwServiceType = static_cast<DWORD>(m_processtype);
 	newstatus.dwCurrentState = static_cast<DWORD>(status);
@@ -229,7 +279,8 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 	newstatus.dwServiceSpecificExitCode = (status == ServiceStatus::Stopped) ? serviceexitcode : ERROR_SUCCESS;
 	newstatus.dwCheckPoint = 0;
 	newstatus.dwWaitHint = 0;
-	m_statusfunc(newstatus);
+
+	m_statusfunc(newstatus);					// Set the non-pending status
 }
 
 //-----------------------------------------------------------------------------
@@ -247,9 +298,8 @@ void service::SetPendingStatus_l(ServiceStatus status)
 	_ASSERTE(m_statusfunc);									// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());					// Should not be running
 
-	// Disallow all service controls during START_PENDING and STOP_PENDING status transitions, otherwise
-	// only filter out additional pending controls.  Dealing with controls received during PAUSE and CONTINUE
-	// operations may or may not be valid based on the service, so that's left up to the implementation
+
+	////// TODO: this is not right
 	uint32_t accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 0 :
 		(m_acceptedcontrols & ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE));
 

@@ -26,9 +26,23 @@ public:
 		Sleep(10000);
 	}
 
+	void OnPause(void)
+	{
+		Sleep(10000);
+	}
+
+	void OnContinue(void)
+	{
+		Sleep(10000);
+	}
+
 	virtual const std::vector<std::unique_ptr<svctl::control_handler>>& getHandlers(void)
 	{
-		static std::unique_ptr<svctl::control_handler> handlers[] = { std::make_unique<InlineControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop) };
+		static std::unique_ptr<svctl::control_handler> handlers[] = { 
+			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop),
+			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Pause, &MyService::OnPause), 
+			//std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Continue, &MyService::OnContinue) 
+		};
 		static std::vector<std::unique_ptr<svctl::control_handler>> v { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) };
 		return v;
 	}

@@ -204,12 +204,6 @@ namespace svctl {
 	typedef std::wstring	tstring;
 #endif
 
-	// svctl::handler_complete_func
-	//
-	// Function used to indicate to the main service class that an asyncronous
-	// handler call has completed; used to stop automatic pending states
-	typedef std::function<void(void)> handler_complete_func;
-
 	// svctl::report_status_func
 	//
 	// Function used to report a service status to either the service control manager
@@ -456,8 +450,7 @@ namespace svctl {
 		// Invoke
 		//
 		// Invokes the control handler
-		virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata, 
-			const handler_complete_func& oncomplete) = 0;
+		virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata) = 0;
 
 		// Control
 		//
@@ -472,8 +465,8 @@ namespace svctl {
 
 	private:
 
-		control_handler(const control_handler&);
-		control_handler& operator=(const control_handler&);
+		control_handler(const control_handler&)=delete;
+		control_handler& operator=(const control_handler&)=delete;
 
 		// m_control
 		//
@@ -556,7 +549,7 @@ namespace svctl {
 		// ControlHandler
 		//
 		// Service control request handler method
-		DWORD ControlHandler(ServiceControl control, DWORD type, void* data);
+		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
 
 		// SetNonPendingStatus_l
 		//
@@ -579,12 +572,22 @@ namespace svctl {
 		// m_acceptedcontrols
 		//
 		// Mask of controls accepted by the service
-		/*TODO const*/ uint32_t m_acceptedcontrols = SERVICE_ACCEPT_STOP;
+		/*TODO const*/ uint32_t m_acceptedcontrols = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE;
+
+		// m_continuesignal
+		//
+		// Signal (event) object used to continue the service when paused
+		signal<signal_type::ManualReset> m_continuesignal;
 
 		// m_name
 		//
 		// Service name
 		/*TODO const */ tstring m_name = L"MyService";
+
+		// m_pausesignal
+		//
+		// Signal (event) object used to pause the service
+		signal<signal_type::ManualReset> m_pausesignal;
 
 		// m_processtype
 		//
@@ -785,11 +788,11 @@ template<class... _services> class ServiceModule;
 
 ///////////////
 template<class _derived>
-class InlineControlHandler : public svctl::control_handler
+class ServiceControlHandler : public svctl::control_handler
 {
 private:
 
-	// Inline Handler Types
+	// Handler Types
 	typedef void(_derived::*noresult_void_handler)(void);
 	typedef void(_derived::*noresult_data_handler)(DWORD, void*);
 	typedef DWORD(_derived::*result_void_handler)(void);
@@ -798,22 +801,22 @@ private:
 public:
 
 	// Instance Constructors
-	InlineControlHandler(ServiceControl control, noresult_void_handler func) :
-		svctl::control_handler(control), m_voidfunc(std::bind(func, std::placeholders::_1)) {}
-	InlineControlHandler(ServiceControl control, noresult_data_handler func) :
-		svctl::control_handler(control), m_datafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
-	InlineControlHandler(ServiceControl control, result_void_handler func) :
-		svctl::control_handler(control), m_statusvoidfunc(std::bind(func, std::placeholders::_1)) {}
-	InlineControlHandler(ServiceControl control, result_data_handler func) :
-		svctl::control_handler(control), m_statusdatafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
+	ServiceControlHandler(ServiceControl control, noresult_void_handler func) :
+		control_handler(control), m_voidfunc(std::bind(func, std::placeholders::_1)) {}
+	ServiceControlHandler(ServiceControl control, noresult_data_handler func) :
+		control_handler(control), m_datafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
+	ServiceControlHandler(ServiceControl control, result_void_handler func) :
+		control_handler(control), m_statusvoidfunc(std::bind(func, std::placeholders::_1)) {}
+	ServiceControlHandler(ServiceControl control, result_data_handler func) :
+		control_handler(control), m_statusdatafunc(std::bind(func, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)) {}
 
 	// Destructor
-	virtual ~InlineControlHandler()=default;
+	virtual ~ServiceControlHandler()=default;
 
 	// Invoke (svctl::control_handler)
 	//
 	// Invokes the control handler
-	virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata, const svctl::handler_complete_func& oncomplete)
+	virtual DWORD Invoke(void* instance, DWORD eventtype, void* eventdata)
 	{
 		_ASSERTE(m_voidfunc || m_datafunc || m_statusvoidfunc || m_statusdatafunc);
 		
@@ -825,17 +828,14 @@ public:
 		else if(m_statusvoidfunc) result = m_statusvoidfunc(d);
 		else if(m_statusdatafunc) result = m_statusdatafunc(d, eventtype, eventdata);
 		else throw svctl::winexception(E_UNEXPECTED);
-
-		// Invoke the completion handler if one has been specified
-		if(oncomplete) oncomplete();
 		
 		return result;
 	}	
 
 private:
 
-	//InlineControlHandler(const InlineControlHandler&)=delete;
-	//InlineControlHandler& operator=(const InlineControlHandler&)=delete;
+	ServiceControlHandler(const ServiceControlHandler&)=delete;
+	ServiceControlHandler& operator=(const ServiceControlHandler&)=delete;
 
 	// m_
 	//

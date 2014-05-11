@@ -15,7 +15,7 @@ public:
 
 	MyService()=default;
 
-	virtual void OnStart(uint32_t argc, svctl::tchar_t** argv)
+	virtual void OnStart(int argc, svctl::tchar_t** argv)
 	{
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);

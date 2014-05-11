@@ -43,24 +43,6 @@ BEGIN_NAMESPACE(svctl)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// auxiliary_state_machine::Initialize
-//
-// Invoked to initialize all registered virtual auxiliary base classes
-//
-// Arguments:
-//
-//	servicename		- Name associated with the derived service
-
-void auxiliary_state_machine::Initialize(const tchar_t* servicename)
-{
-	_ASSERTE(servicename != nullptr);
-	if(!servicename) throw winexception(E_INVALIDARG);
-
-	// Invoke auxiliary_state::OnInitialize for all registered instances
-	for(const auto& iterator : m_instances) iterator->OnInitialize(servicename);
-}
-
-//-----------------------------------------------------------------------------
 // auxiliary_state_machine::RegisterAuxiliaryState (protected)
 //
 // Registers an auxiliary class with the state machine.  This should be called

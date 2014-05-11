@@ -179,19 +179,6 @@ inline ServiceProcessType& operator^=(ServiceProcessType& lhs, ServiceProcessTyp
 
 namespace svctl {
 
-	// Forward Declarations - clean these up only list the 
-	// ones that actually have to be here
-	struct auxiliary_state;
-	class auxiliary_state_machine;
-	class service;
-	class service_config;
-	class service_module;
-	class service_table_entry;
-
-	//
-	// Data Types
-	//
-
 	// svctl::char_t
 	//
 	// ANSI string character type
@@ -403,7 +390,25 @@ namespace svctl {
 	// inheritance of the auxiliary_state_machine
 	struct __declspec(novtable) auxiliary_state
 	{
-		virtual void OnInitialize(const tchar_t* servicename) = 0;
+		// OnContinue
+		//
+		// Invoked when the derived service is continued
+		virtual void OnContinue(void) = 0;
+
+		// OnPause
+		//
+		// Invoked when the derived service is paused
+		virtual void OnPause(void) = 0;
+
+		// OnStart
+		//
+		// Invoked when the derived service is started
+		virtual void OnStart(int argc, tchar_t** argv) = 0;
+
+		// OnStop
+		//
+		// Invoked when the derived service is stopped
+		virtual void OnStop(void) = 0;
 	};
 
 	// svctl::auxiliary_state_machine
@@ -418,10 +423,25 @@ namespace svctl {
 		//
 		auxiliary_state_machine()=default;
 
-		// Initialize
+		// OnContinue
 		//
-		// Invokes all of the registered OnInitialize() methods
-		void Initialize(const tchar_t* servicename);
+		// Invokes all of the registered OnContinue() methods
+		void OnContinue(void) { for(const auto& iterator : m_instances) iterator->OnContinue(); }
+
+		// OnPause
+		//
+		// Invokes all of the registered OnPause() methods
+		void OnPause(void) { for(const auto& iterator : m_instances) iterator->OnPause(); }
+
+		// OnStart
+		//
+		// Invokes all of the registered OnStart() methods
+		void OnStart(int argc, tchar_t** argv) { for(const auto& iterator : m_instances) iterator->OnStart(argc, argv); }
+
+		// OnStop
+		//
+		// Invokes all of the registered OnStop() methods
+		void OnStop(void) { for(const auto& iterator : m_instances) iterator->OnStop(); }
 
 	protected:
 
@@ -484,6 +504,48 @@ namespace svctl {
 	// as a vector of unique pointers to control_handler instances ...
 	typedef std::vector<std::unique_ptr<svctl::control_handler>> control_handler_table;
 
+	// svctl::service_table_entry
+	//
+	// holds the static information necessary to dispatch a service class object
+	class service_table_entry
+	{
+	public:
+
+		// Instance Constructor
+		//
+		service_table_entry(const tchar_t* name, LPSERVICE_MAIN_FUNCTION servicemain, LPSERVICE_MAIN_FUNCTION localmain) :
+			m_name(name), m_servicemain(servicemain), m_localmain(localmain) {}
+
+		// LocalServiceEntry
+		//
+		// Gets a SERVICE_TABLE_ENTRY for use with the local service dispatcher
+		__declspec(property(get=getLocalServiceEntry)) SERVICE_TABLE_ENTRY LocalServiceEntry;
+		SERVICE_TABLE_ENTRY getLocalServiceEntry(void) const { return SERVICE_TABLE_ENTRY { const_cast<tchar_t*>(m_name), m_localmain }; };
+
+		// ServiceEntry
+		//
+		// Gets a SERVICE_TABLE_ENTRY for use with the system service dispatcher
+		__declspec(property(get=getServiceEntry)) SERVICE_TABLE_ENTRY ServiceEntry;
+		SERVICE_TABLE_ENTRY getServiceEntry(void) const { return { const_cast<tchar_t*>(m_name), m_servicemain }; };
+	
+	private:
+
+		// m_name
+		//
+		// Service name
+		const tchar_t* m_name;
+
+		// m_servicemain
+		//
+		// Pointer to the service's static ServiceMain() entry point
+		LPSERVICE_MAIN_FUNCTION m_servicemain;
+
+		// m_localmain
+		//
+		// Pointer to the service's static LocalMain() entry point
+		LPSERVICE_MAIN_FUNCTION m_localmain;		
+	};
+
 	// svctl::service
 	//
 	// Base class that implements a single service instance
@@ -498,13 +560,13 @@ namespace svctl {
 		//
 		// Service entry point invoked when running as a normal process
 		// TODO: make private? -- screws with unique_ptr in Service<xxxxx>
-		void LocalMain(uint32_t argc, tchar_t** argv);
+		void LocalMain(int argc, tchar_t** argv);
 
 		// ServiceMain
 		//
 		// Service entry point invoked when running as a service
 		// TODO: make private? -- screws with unique_ptr in Service<xxxxx>
-		void ServiceMain(uint32_t argc, tchar_t** argv);
+		void ServiceMain(int argc, tchar_t** argv);
 
 	protected:
 		
@@ -514,7 +576,7 @@ namespace svctl {
 		// OnStart
 		//
 		// Invoked when the service is started; must be implemented in the service
-		virtual void OnStart(uint32_t argc, tchar_t** argv) = 0;
+		virtual void OnStart(int argc, tchar_t** argv) = 0;
 
 	private:
 
@@ -672,49 +734,6 @@ namespace svctl {
 		// Collection of all service_table_entry structures for each service
 		const std::vector<service_table_entry> m_services;
 	};
-
-	// svctl::service_table_entry
-	//
-	// holds the static information necessary to dispatch a service class object
-	class service_table_entry
-	{
-	public:
-
-		// Instance Constructor
-		//
-		service_table_entry(const tchar_t* name, LPSERVICE_MAIN_FUNCTION servicemain, LPSERVICE_MAIN_FUNCTION localmain) :
-			m_name(name), m_servicemain(servicemain), m_localmain(localmain) {}
-
-		// LocalServiceEntry
-		//
-		// Gets a SERVICE_TABLE_ENTRY for use with the local service dispatcher
-		__declspec(property(get=getLocalServiceEntry)) SERVICE_TABLE_ENTRY LocalServiceEntry;
-		SERVICE_TABLE_ENTRY getLocalServiceEntry(void) const { return SERVICE_TABLE_ENTRY { const_cast<tchar_t*>(m_name), m_localmain }; };
-
-		// ServiceEntry
-		//
-		// Gets a SERVICE_TABLE_ENTRY for use with the system service dispatcher
-		__declspec(property(get=getServiceEntry)) SERVICE_TABLE_ENTRY ServiceEntry;
-		SERVICE_TABLE_ENTRY getServiceEntry(void) const { return { const_cast<tchar_t*>(m_name), m_servicemain }; };
-	
-	private:
-
-		// m_name
-		//
-		// Service name
-		const tchar_t* m_name;
-
-		// m_servicemain
-		//
-		// Pointer to the service's static ServiceMain() entry point
-		LPSERVICE_MAIN_FUNCTION m_servicemain;
-
-		// m_localmain
-		//
-		// Pointer to the service's static LocalMain() entry point
-		LPSERVICE_MAIN_FUNCTION m_localmain;		
-	};
-
 } // namespace svctl
 
 //-----------------------------------------------------------------------------
@@ -864,7 +883,7 @@ void Service<_derived>::StaticLocalMain(DWORD argc, LPTSTR* argv)
 {
 	// Construct the derived service class object and invoke the non-static entry point
 	std::unique_ptr<svctl::service> instance = std::make_unique<_derived>();
-	instance->LocalMain(argc, argv);
+	instance->LocalMain(static_cast<int>(argc), argv);
 }
 
 // Service<_derived>::StaticServiceMain (private, static)
@@ -875,7 +894,7 @@ void Service<_derived>::StaticServiceMain(DWORD argc, LPTSTR* argv)
 {
 	// Construct the derived service class object and invoke the non-static entry point
 	std::unique_ptr<svctl::service> instance = std::make_unique<_derived>();
-	instance->ServiceMain(argc, argv);
+	instance->ServiceMain(static_cast<int>(argc), argv);
 }
 
 //-----------------------------------------------------------------------------

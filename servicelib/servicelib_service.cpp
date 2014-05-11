@@ -154,18 +154,15 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 //	argc		- Number of command line arguments
 //	argv		- Array of command-line argument strings
 
-void service::LocalMain(uint32_t argc, tchar_t** argv)
+void service::LocalMain(int argc, tchar_t** argv)
 {
 	UNREFERENCED_PARAMETER(argc);
 	UNREFERENCED_PARAMETER(argv);
 
 	// Create a service status report function that reports to the local dispatcher
 	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
-		// TODO
 		UNREFERENCED_PARAMETER(status);
 	};
-
-	///auxiliary_state_machine::Initialize(m_name.c_str());
 }
 
 //-----------------------------------------------------------------------------
@@ -178,7 +175,7 @@ void service::LocalMain(uint32_t argc, tchar_t** argv)
 //	argc		- Number of command line arguments
 //	argv		- Array of command-line argument strings
 
-void service::ServiceMain(uint32_t argc, tchar_t** argv)
+void service::ServiceMain(int argc, tchar_t** argv)
 {
 	// Define a HandlerEx callback that thunks back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
@@ -202,7 +199,7 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 		SetStatus(ServiceStatus::StartPending);
 
 		// Initialize registered auxiliary base classes
-		/// TODO: auxiliary_state_machine::Initialize(m_name.c_str());
+		auxiliary_state_machine::OnStart(argc, argv);
 
 		// Invoke the derived service's OnStart, when that returns service is running
 		OnStart(argc, argv);
@@ -234,14 +231,17 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 			wait = WaitForMultipleObjects(signals.size(), signals.data(), FALSE, INFINITE);
 
 			// WAIT_OBJECT_0 --> ServiceControl::Stop
+			// TODO: need 	auxiliary_state_machine::OnStop();
 			if(wait == WAIT_OBJECT_0)
 				primary_handler(ServiceStatus::StopPending, ServiceControl::Stop, ServiceStatus::Stopped, m_stopsignal);
 			
 			// WAIT_OBJECT_0 + 1 --> ServiceControl::Pause
+			// TODO: need 	auxiliary_state_machine::OnPause();
 			else if(wait == WAIT_OBJECT_0 + 1)
 				primary_handler(ServiceStatus::PausePending, ServiceControl::Pause, ServiceStatus::Paused, m_pausesignal);
 
 			// WAIT_OBJECT_0 + 2 --> ServiceControl::Continue
+			// TODO: need 	auxiliary_state_machine::OnContinue();
 			else if(wait == WAIT_OBJECT_0 + 2)
 				primary_handler(ServiceStatus::ContinuePending, ServiceControl::Continue, ServiceStatus::Running, m_continuesignal);
 
@@ -251,17 +251,16 @@ void service::ServiceMain(uint32_t argc, tchar_t** argv)
 		}
 	}
 
-	// Set the service to STOPPED on exception.  TODO: If the service has derived
-	// from a logging/tracing class that can perhaps be used here, but as far
-	// as generic error reporting goes, stuck for now.
 	catch(winexception& ex) { 
 		
+		// Set the service to STOPPED on an unhandled winexception
 		try { SetStatus(ServiceStatus::Stopped, ex.code()); }
 		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
 	}
 
 	catch(...) { 
 		
+		// Set the servuce to STOPPED on an unhandled exception
 		try { SetStatus(ServiceStatus::Stopped, ERROR_SERVICE_SPECIFIC_ERROR, static_cast<DWORD>(E_FAIL)); }
 		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
 	}

@@ -136,7 +136,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 		DWORD result = iterator->Invoke(this, eventtype, eventdata);
 		if(result != ERROR_SUCCESS) return result;
 		
-		handled = true;						// At least one handler was successfully invoked
+		handled = true;				// At least one handler was successfully invoked
 	}
 
 	// Default for most service controls is to return ERROR_SUCCESS if it was handled

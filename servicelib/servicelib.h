@@ -559,13 +559,11 @@ namespace svctl {
 		// LocalMain
 		//
 		// Service entry point invoked when running as a normal process
-		// TODO: make private? -- screws with unique_ptr in Service<xxxxx>
 		void LocalMain(int argc, tchar_t** argv);
 
 		// ServiceMain
 		//
 		// Service entry point invoked when running as a service
-		// TODO: make private? -- screws with unique_ptr in Service<xxxxx>
 		void ServiceMain(int argc, tchar_t** argv);
 
 	protected:

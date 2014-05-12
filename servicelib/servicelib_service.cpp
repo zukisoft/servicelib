@@ -195,29 +195,11 @@ void service::ServiceMain(int argc, tchar_t** argv)
 	
 	try {
 
-		// Report a status of StartPending to the service control manager
+		// START --> StartPending --> aux::OnStart() --> OnStart() --> Running
 		SetStatus(ServiceStatus::StartPending);
-
-		// Initialize registered auxiliary base classes
 		auxiliary_state_machine::OnStart(argc, argv);
-
-		// Invoke the derived service's OnStart, when that returns service is running
 		OnStart(argc, argv);
 		SetStatus(ServiceStatus::Running);
-
-		// primary_handler lambda; Used to set a pending status, invoke all relevant handler functions for the
-		// signaled control, set the proper non-pending status and reset the event object when finished
-		std::function<void(ServiceStatus, ServiceControl, ServiceStatus, const signal<signal_type::ManualReset>&)> primary_handler = 
-			[this](ServiceStatus pending, ServiceControl control, ServiceStatus final, const signal<signal_type::ManualReset>& signal) -> void {
-
-			SetStatus(pending);						// Set the specified pending status
-
-			// Iterate over all the derived class handlers and invoke each relevant one in the order they appear
-			for(const auto& handler : m_handlers) { if(handler->Control == control) handler->Invoke(this, 0, nullptr); }
-
-			SetStatus(final);						// Set final status
-			signal.Reset();							// Reset the kernel event object to unsignaled
-		};
 
 		// The primary service control functions (STOP, PAUSE and CONTINUE) are handled here in the
 		// main service thread rather than in the control handler, and are signaled via event objects
@@ -230,22 +212,37 @@ void service::ServiceMain(int argc, tchar_t** argv)
 			// Wait for one of the three primary service control events to be signaled
 			wait = WaitForMultipleObjects(signals.size(), signals.data(), FALSE, INFINITE);
 
-			// WAIT_OBJECT_0 --> ServiceControl::Stop
-			// TODO: need 	auxiliary_state_machine::OnStop();
-			if(wait == WAIT_OBJECT_0)
-				primary_handler(ServiceStatus::StopPending, ServiceControl::Stop, ServiceStatus::Stopped, m_stopsignal);
+			// WAIT_OBJECT_0: STOP --> StopPending --> OnStop() --> aux::OnStop() --> Stopped
+			if(wait == WAIT_OBJECT_0) {
+
+				SetStatus(ServiceStatus::StopPending);
+				for(const auto& handler : m_handlers) { if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr); }
+				auxiliary_state_machine::OnStop();
+				SetStatus(ServiceStatus::Stopped);
+				m_stopsignal.Reset();
+			}
 			
-			// WAIT_OBJECT_0 + 1 --> ServiceControl::Pause
-			// TODO: need 	auxiliary_state_machine::OnPause();
-			else if(wait == WAIT_OBJECT_0 + 1)
-				primary_handler(ServiceStatus::PausePending, ServiceControl::Pause, ServiceStatus::Paused, m_pausesignal);
+			// WAIT_OBJECT_0 + 1: PAUSE --> PausePending --> OnPause() --> aux::OnPause() --> Paused
+			else if(wait == WAIT_OBJECT_0 + 1) {
 
-			// WAIT_OBJECT_0 + 2 --> ServiceControl::Continue
-			// TODO: need 	auxiliary_state_machine::OnContinue();
-			else if(wait == WAIT_OBJECT_0 + 2)
-				primary_handler(ServiceStatus::ContinuePending, ServiceControl::Continue, ServiceStatus::Running, m_continuesignal);
+				SetStatus(ServiceStatus::PausePending);
+				for(const auto& handler : m_handlers) { if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr); }
+				auxiliary_state_machine::OnPause();
+				SetStatus(ServiceStatus::Paused);
+				m_pausesignal.Reset();
+			}
 
-			// WAIT_FAILED --> Error
+			// WAIT_OBJECT_0 + 2: CONTINUE --> ContinuePending --> aux::OnContinue() --> OnContinue() --> Running
+			else if(wait == WAIT_OBJECT_0 + 2) {
+				
+				SetStatus(ServiceStatus::ContinuePending);
+				auxiliary_state_machine::OnContinue();
+				for(const auto& handler : m_handlers) { if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr); }
+				SetStatus(ServiceStatus::Running);
+				m_continuesignal.Reset();
+			}
+
+			// WAIT_FAILED: Error
 			else if(wait == WAIT_FAILED) throw winexception();
 			else throw winexception(E_FAIL);
 		}

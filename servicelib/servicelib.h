@@ -772,41 +772,6 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// ::Service<>
-//
-// Template-based wrapper class around the svctl::service base class; must
-// define some service specific static functions/variables to properly describe
-// the service to the template library
-
-template<class _derived>
-class Service : public svctl::service
-{
-public:
-
-	// Instance Constructor
-	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType(), _derived::s_getHandlers()) {}
-
-	// Destructor
-	virtual ~Service()=default;
-
-	// s_tableentry
-	//
-	// Container for the static service class data
-	static SERVICE_TABLE_ENTRY s_tableentry;
-
-private:
-
-	Service(const Service&)=delete;
-	Service& operator=(const Service&)=delete;
-};
-
-// Service<_derived>::s_tableentry (private, static)
-//
-// Defines the static SERVICE_TABLE_ENTRY information for this service class
-template<class _derived>
-SERVICE_TABLE_ENTRY Service<_derived>::s_tableentry = { const_cast<svctl::tchar_t*>(_derived::s_getName()), &svctl::service::ServiceMain<_derived> };
-
-//-----------------------------------------------------------------------------
 // ServiceModule<>
 //
 // Service process module implementation
@@ -851,6 +816,40 @@ private:
 	ServiceModule(const ServiceModule&)=delete;
 	ServiceModule& operator=(const ServiceModule&)=delete;
 };
+
+//-----------------------------------------------------------------------------
+// ::Service<>
+//
+// Template-based wrapper class around the svctl::service base class
+
+template<class _derived>
+class Service : public svctl::service
+{
+friend class ServiceModule<_derived>;
+public:
+
+	// Instance Constructor
+	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType(), _derived::s_getHandlers()) {}
+
+	// Destructor
+	virtual ~Service()=default;
+
+private:
+
+	Service(const Service&)=delete;
+	Service& operator=(const Service&)=delete;
+
+	// s_tableentry
+	//
+	// Container for the static service class data
+	static SERVICE_TABLE_ENTRY s_tableentry;
+};
+
+// Service<_derived>::s_tableentry (private, static)
+//
+// Defines the static SERVICE_TABLE_ENTRY information for this service class
+template<class _derived>
+SERVICE_TABLE_ENTRY Service<_derived>::s_tableentry = { const_cast<svctl::tchar_t*>(_derived::s_getName()), &svctl::service::ServiceMain<_derived> };
 
 //-----------------------------------------------------------------------------
 

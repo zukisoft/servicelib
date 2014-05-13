@@ -100,36 +100,7 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //	processtype		- Servuice process type
 //	handlers		- Service control handler table
 
-service::service(const tchar_t* name, ServiceProcessType processtype, const control_handler_table& handlers) 
-	: m_name(name), m_processtype(processtype), m_handlers(handlers), m_acceptedcontrols([&]() -> DWORD {
-
-	DWORD accept = 0;
-
-	// Derive what controls this service should report based on what service control handlers
-	// have been implemented in the derived class
-	for(const auto& iterator : handlers) {
-
-		if(iterator->Control == ServiceControl::Stop)						accept |= SERVICE_ACCEPT_STOP;
-		else if(iterator->Control == ServiceControl::Pause)					accept |= SERVICE_ACCEPT_PAUSE_CONTINUE;
-		else if(iterator->Control == ServiceControl::Continue)				accept |= SERVICE_ACCEPT_PAUSE_CONTINUE;
-		else if(iterator->Control == ServiceControl::Shutdown)				accept |= SERVICE_ACCEPT_SHUTDOWN;
-		else if(iterator->Control == ServiceControl::ParameterChange)		accept |= SERVICE_ACCEPT_PARAMCHANGE;
-		else if(iterator->Control == ServiceControl::NetBindAdd)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
-		else if(iterator->Control == ServiceControl::NetBindRemove)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
-		else if(iterator->Control == ServiceControl::NetBindEnable)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
-		else if(iterator->Control == ServiceControl::NetBindDisable)		accept |= SERVICE_ACCEPT_NETBINDCHANGE;
-		else if(iterator->Control == ServiceControl::HardwareProfileChange)	accept |= SERVICE_ACCEPT_HARDWAREPROFILECHANGE;
-		else if(iterator->Control == ServiceControl::PowerEvent)			accept |= SERVICE_ACCEPT_POWEREVENT;
-		else if(iterator->Control == ServiceControl::SessionChange)			accept |= SERVICE_ACCEPT_SESSIONCHANGE;
-		else if(iterator->Control == ServiceControl::PreShutdown)			accept |= SERVICE_ACCEPT_PRESHUTDOWN;
-		else if(iterator->Control == ServiceControl::TimeChange)			accept |= SERVICE_ACCEPT_TIMECHANGE;
-		else if(iterator->Control == ServiceControl::TriggerEvent)			accept |= SERVICE_ACCEPT_TRIGGEREVENT;
-		else if(iterator->Control == ServiceControl::UserModeReboot)		accept |= SERVICE_ACCEPT_USERMODEREBOOT;
-	}
-
-	return accept;						// Return the generated bitmask
-
-}()) {}
+service::service(const tchar_t* name, ServiceProcessType processtype) : m_name(name), m_processtype(processtype) {}
 
 //-----------------------------------------------------------------------------
 // service::ControlHandler (private)
@@ -176,7 +147,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Iterate over all of the implemented control handlers and invoke each of them
 	// in the order in which they appear in the control handler vector<>
 	bool handled = false;
-	for(const auto& iterator : m_handlers) {
+	for(const auto& iterator : Handlers) {
 
 		if(iterator->Control != control) continue;
 
@@ -194,22 +165,56 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 }
 
 //-----------------------------------------------------------------------------
-// service::ServiceMain<> (static)
+// service::getAcceptedControls (private)
 //
-// Service entry point
+// Determines what SERVICE_ACCEPT_XXXX codes the service will respond to based
+// on what control handlers have been registered
 //
 // Arguments:
 //
-//	argc		- Number of command line arguments
-//	argv		- Array of command line argument strings
+//	NONE
 
-//template<class _derived>
-//void service::ServiceMain(DWORD argc, tchar_t** argv)
-//{
-//	// Create an instance of the derived class and invoke instance ServiceMain()
-//	std::unique_ptr<service> instance = std::make_unique<_derived>();
-//	if(instance) instance->ServiceMain(static_cast<int>(argc), argv);
-//}
+DWORD service::getAcceptedControls(void) const
+{
+	DWORD accept = 0;
+
+	// Derive what controls this service should report based on what service control handlers have
+	// been implemented in the derived class
+	for(const auto& iterator : Handlers) {
+
+		if(iterator->Control == ServiceControl::Stop)						accept |= SERVICE_ACCEPT_STOP;
+		else if(iterator->Control == ServiceControl::Pause)					accept |= SERVICE_ACCEPT_PAUSE_CONTINUE;
+		else if(iterator->Control == ServiceControl::Continue)				accept |= SERVICE_ACCEPT_PAUSE_CONTINUE;
+		else if(iterator->Control == ServiceControl::Shutdown)				accept |= SERVICE_ACCEPT_SHUTDOWN;
+		else if(iterator->Control == ServiceControl::ParameterChange)		accept |= SERVICE_ACCEPT_PARAMCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindAdd)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindRemove)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindEnable)			accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::NetBindDisable)		accept |= SERVICE_ACCEPT_NETBINDCHANGE;
+		else if(iterator->Control == ServiceControl::HardwareProfileChange)	accept |= SERVICE_ACCEPT_HARDWAREPROFILECHANGE;
+		else if(iterator->Control == ServiceControl::PowerEvent)			accept |= SERVICE_ACCEPT_POWEREVENT;
+		else if(iterator->Control == ServiceControl::SessionChange)			accept |= SERVICE_ACCEPT_SESSIONCHANGE;
+		else if(iterator->Control == ServiceControl::PreShutdown)			accept |= SERVICE_ACCEPT_PRESHUTDOWN;
+		else if(iterator->Control == ServiceControl::TimeChange)			accept |= SERVICE_ACCEPT_TIMECHANGE;
+		else if(iterator->Control == ServiceControl::TriggerEvent)			accept |= SERVICE_ACCEPT_TRIGGEREVENT;
+		else if(iterator->Control == ServiceControl::UserModeReboot)		accept |= SERVICE_ACCEPT_USERMODEREBOOT;
+	}
+
+	return accept;						// Return the generated bitmask
+}
+
+//-----------------------------------------------------------------------------
+// service::getHandlers (protected, virtual)
+//
+// Gets the collection of service-specific control handlers
+
+const control_handler_table& service::getHandlers(void) const
+{
+	// The default implementation has no handlers; this results in a service that
+	// can be started but otherwise will not respond to any controls, including STOP
+	static control_handler_table nohandlers;
+	return nohandlers;
+}
 
 //-----------------------------------------------------------------------------
 // service::ServiceMain (private)
@@ -254,7 +259,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 			if(wait == WAIT_OBJECT_0) {
 
 				SetStatus(ServiceStatus::StopPending);
-				for(const auto& handler : m_handlers) { if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr); }
+				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr); }
 				auxiliary_state_machine::OnStop();
 				SetStatus(ServiceStatus::Stopped);
 				m_stopsignal.Reset();
@@ -264,7 +269,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 			else if(wait == WAIT_OBJECT_0 + 1) {
 
 				SetStatus(ServiceStatus::PausePending);
-				for(const auto& handler : m_handlers) { if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr); }
+				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr); }
 				auxiliary_state_machine::OnPause();
 				SetStatus(ServiceStatus::Paused);
 				m_pausesignal.Reset();
@@ -275,7 +280,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 				
 				SetStatus(ServiceStatus::ContinuePending);
 				auxiliary_state_machine::OnContinue();
-				for(const auto& handler : m_handlers) { if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr); }
+				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr); }
 				SetStatus(ServiceStatus::Running);
 				m_continuesignal.Reset();
 			}
@@ -322,7 +327,7 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 	SERVICE_STATUS newstatus;
 	newstatus.dwServiceType = static_cast<DWORD>(m_processtype);
 	newstatus.dwCurrentState = static_cast<DWORD>(status);
-	newstatus.dwControlsAccepted = (status == ServiceStatus::Stopped) ? 0 : m_acceptedcontrols;
+	newstatus.dwControlsAccepted = (status == ServiceStatus::Stopped) ? 0 : AcceptedControls;
 	newstatus.dwWin32ExitCode = (status == ServiceStatus::Stopped) ? win32exitcode : ERROR_SUCCESS;
 	newstatus.dwServiceSpecificExitCode = (status == ServiceStatus::Stopped) ? serviceexitcode : ERROR_SUCCESS;
 	newstatus.dwCheckPoint = 0;
@@ -348,7 +353,7 @@ void service::SetPendingStatus_l(ServiceStatus status)
 
 	// Block all controls during SERVICE_START_PENDING and SERVICE_STOP_PENDING only
 	DWORD accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 
-		0 : m_acceptedcontrols;
+		0 : AcceptedControls;
 
 	// Kick off a new worker thread to manage the automatic checkpoint operation
 	m_statusworker = std::move(std::thread([=]() {

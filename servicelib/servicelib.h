@@ -514,6 +514,9 @@ namespace svctl {
 		template<class _derived>
 		static void WINAPI ServiceMain(DWORD argc, tchar_t** argv)
 		{
+			//
+			// TODO: can probably be a lambda in the SERVICE_TABLE_ENTRY instead
+			//
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
 			if(instance) instance->ServiceMain(static_cast<int>(argc), argv);
 		}
@@ -521,12 +524,18 @@ namespace svctl {
 	protected:
 		
 		// Instance Constructor
-		service(const tchar_t* name, ServiceProcessType processtype, const control_handler_table& handlers);
+		service(const tchar_t* name, ServiceProcessType processtype);
 
 		// OnStart
 		//
 		// Invoked when the service is started; must be implemented in the service
 		virtual void OnStart(int argc, tchar_t** argv) = 0;
+
+		// Handlers
+		//
+		// Gets the collection of service-specific control handlers
+		__declspec(property(get=getHandlers)) const control_handler_table& Handlers;
+		virtual const control_handler_table& getHandlers(void) const;
 
 	private:
 
@@ -576,20 +585,16 @@ namespace svctl {
 		void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
 		void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
 
-		// m_acceptedcontrols
+		// AcceptedControls
 		//
-		// Mask of controls accepted by the service
-		const DWORD m_acceptedcontrols;
+		// Gets what control codes the service will accept
+		__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
+		DWORD getAcceptedControls(void) const;
 
 		// m_continuesignal
 		//
 		// Signal (event) object used to continue the service when paused
 		signal<signal_type::ManualReset> m_continuesignal;
-
-		// m_handlers
-		//
-		// Service control handler table reference
-		const control_handler_table& m_handlers;
 
 		// m_name
 		//
@@ -829,7 +834,7 @@ friend class ServiceModule<_derived>;
 public:
 
 	// Instance Constructor
-	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType(), _derived::s_getHandlers()) {}
+	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType()) {}
 
 	// Destructor
 	virtual ~Service()=default;

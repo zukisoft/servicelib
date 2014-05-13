@@ -15,7 +15,7 @@ public:
 
 	MyService()=default;
 
-	virtual void OnStart(int argc, svctl::tchar_t** argv)
+	void OnStart(int argc, svctl::tchar_t** argv)
 	{
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
@@ -48,7 +48,7 @@ public:
 	}
 
 	// BEGIN_CONTROL_MAP()
-	static const svctl::control_handler_table& s_getHandlers(void)
+	const svctl::control_handler_table& getHandlers(void) const
 	{
 		static std::unique_ptr<svctl::control_handler> handlers[] = { 
 			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop),

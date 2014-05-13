@@ -435,6 +435,64 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 }
 
 //-----------------------------------------------------------------------------
+// svctl::service_module
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// service_module::Dispatch
+//
+// Dispatches a filtered collection of services to either the service control
+// manager or the local dispatcher depending on the runtime context
+//
+// Arguments:
+//
+//	service		- Filtered collection of services to be dispatched
+
+int service_module::Dispatch(const std::vector<service_table_entry>& services)
+{
+	std::vector<SERVICE_TABLE_ENTRY>	table;			// Table of services to dispatch
+
+	// Create the SERVICE_TABLE_ENTRY array for StartServiceCtrlDispatcher
+	for(const auto& iterator : services) table.push_back(iterator.ServiceEntry);
+	table.push_back( { nullptr, nullptr } );
+
+	// Attempt to start the service control dispatcher
+	if(!StartServiceCtrlDispatcher(table.data())) return static_cast<int>(GetLastError());
+
+	return 0;
+}
+
+//-----------------------------------------------------------------------------
+// service_module::ModuleMain
+//
+// Implements the entry point for the service module
+//
+// Arguments:
+//
+//	argc		- Number of command line arguments
+//	argv		- Array of command line argument strings
+
+int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
+{
+	// PROCESS COMMAND LINE ARGUMENTS TO FILTER THE LIST
+	// run
+	// install
+	// uninstall
+	// regserver
+	// unregserver
+	// and so on
+
+	UNREFERENCED_PARAMETER(argc);
+	UNREFERENCED_PARAMETER(argv);
+
+	std::vector<service_table_entry> filtered;
+	for(const auto& iterator : m_services) filtered.push_back(iterator);
+
+	// Dispatch the filtered list of service classes
+	return Dispatch(filtered);
+}
+
+//-----------------------------------------------------------------------------
 // svctl::winexception
 //-----------------------------------------------------------------------------
 

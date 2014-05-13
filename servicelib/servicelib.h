@@ -716,6 +716,7 @@ namespace svctl {
 		// Collection of all service_table_entry structures for each service
 		const std::vector<service_table_entry> m_services;
 	};
+
 } // namespace svctl
 
 //-----------------------------------------------------------------------------

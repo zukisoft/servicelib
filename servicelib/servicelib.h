@@ -643,10 +643,10 @@ namespace svctl {
 		// Holds any exception thrown by a status worker thread
 		std::exception_ptr m_statusexception;
 
-		// m_statusfunc
+		// m_statushandle
 		//
-		// Function pointer used to report an updated service status
-		report_status_func m_statusfunc;
+		// Handle returned when the service control handler was registered
+		SERVICE_STATUS_HANDLE m_statushandle;
 
 		// m_statuslock;
 		//

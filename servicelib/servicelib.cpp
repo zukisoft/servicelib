@@ -210,17 +210,9 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
 	// Register the service control handler for this service using the handler defined above
-	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), handler, this);
-	if(statushandle == 0) throw winexception();
+	m_statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), handler, this);
+	if(m_statushandle == 0) throw winexception();
 
-	// Create a service status report function that reports to the service control manager
-	// using the handle provided by RegisterServiceCtrlHandlerEx above
-	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
-
-		_ASSERTE(statushandle != 0);
-		if(!SetServiceStatus(statushandle, &status)) throw winexception();
-	};
-	
 	try {
 
 		// START --> StartPending --> aux::OnStart() --> OnStart() --> Running
@@ -305,7 +297,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 // CAUTION: m_statuslock should be locked before calling this function
 void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
-	_ASSERTE(m_statusfunc);										// Needs to be set
+	_ASSERTE(m_statushandle != 0);								// Should have been set
 	_ASSERTE(!m_statusworker.joinable());						// Should not be running
 
 	// Create and initialize a new SERVICE_STATUS for this operation
@@ -318,7 +310,7 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 	newstatus.dwCheckPoint = 0;
 	newstatus.dwWaitHint = 0;
 
-	m_statusfunc(newstatus);					// Set the non-pending status
+	if(!SetServiceStatus(m_statushandle, &newstatus)) throw winexception();
 }
 
 //-----------------------------------------------------------------------------
@@ -333,7 +325,7 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 // CAUTION: m_statuslock should be locked before calling this function
 void service::SetPendingStatus_l(ServiceStatus status)
 {
-	_ASSERTE(m_statusfunc);									// Needs to be set
+	_ASSERTE(m_statushandle != 0);							// Needs to have been set
 	_ASSERTE(!m_statusworker.joinable());					// Should not be running
 
 	// Block all controls during SERVICE_START_PENDING and SERVICE_STOP_PENDING only
@@ -356,13 +348,13 @@ void service::SetPendingStatus_l(ServiceStatus status)
 			pendingstatus.dwWaitHint = (status == ServiceStatus::StartPending) ? STARTUP_WAIT_HINT : PENDING_WAIT_HINT;
 
 			// Set the initial pending status
-			m_statusfunc(pendingstatus);
+			if(!SetServiceStatus(m_statushandle, &pendingstatus)) throw winexception();
 
 			// Continually report the same pending status with an incremented checkpoint until signaled
 			while(WaitForSingleObject(m_statussignal, PENDING_CHECKPOINT_INTERVAL) == WAIT_TIMEOUT) {
 
 				++pendingstatus.dwCheckPoint;
-				m_statusfunc(pendingstatus);
+				if(!SetServiceStatus(m_statushandle, &pendingstatus)) throw winexception();
 			}
 		}
 

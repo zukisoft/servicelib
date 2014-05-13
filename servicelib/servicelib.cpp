@@ -253,7 +253,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		while(wait != WAIT_OBJECT_0) {
 
 			// Wait for one of the three primary service control events to be signaled
-			wait = WaitForMultipleObjects(signals.size(), signals.data(), FALSE, INFINITE);
+			wait = WaitForMultipleObjects(static_cast<DWORD>(signals.size()), signals.data(), FALSE, INFINITE);
 
 			// WAIT_OBJECT_0: STOP --> StopPending --> OnStop() --> aux::OnStop() --> Stopped
 			if(wait == WAIT_OBJECT_0) {

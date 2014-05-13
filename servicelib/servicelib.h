@@ -26,9 +26,7 @@
 
 // C Runtime Library
 #include <crtdbg.h>
-#include <process.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <tchar.h>
 
 // Standard Template Library
@@ -805,13 +803,8 @@ public:
 	// WinMain
 	//
 	// Entry point for Windows application modules
-	int WinMain(HINSTANCE instance, HINSTANCE previous, LPTSTR cmdline, int show)
+	int WinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
 	{
-		UNREFERENCED_PARAMETER(instance);
-		UNREFERENCED_PARAMETER(previous);
-		UNREFERENCED_PARAMETER(cmdline);
-		UNREFERENCED_PARAMETER(show);
-
 		// Pass the main() style command line arguments into the base class implementation
 		return service_module::ModuleMain(__argc, __targv);
 	}

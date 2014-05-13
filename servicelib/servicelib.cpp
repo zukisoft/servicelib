@@ -194,9 +194,27 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 }
 
 //-----------------------------------------------------------------------------
-// service::ServiceMain
+// service::ServiceMain<> (static)
 //
-// Service entry point when process is being run as a service
+// Service entry point
+//
+// Arguments:
+//
+//	argc		- Number of command line arguments
+//	argv		- Array of command line argument strings
+
+//template<class _derived>
+//void service::ServiceMain(DWORD argc, tchar_t** argv)
+//{
+//	// Create an instance of the derived class and invoke instance ServiceMain()
+//	std::unique_ptr<service> instance = std::make_unique<_derived>();
+//	if(instance) instance->ServiceMain(static_cast<int>(argc), argv);
+//}
+
+//-----------------------------------------------------------------------------
+// service::ServiceMain (private)
+//
+// Service entry point
 //
 // Arguments:
 //
@@ -205,7 +223,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 
 void service::ServiceMain(int argc, tchar_t** argv)
 {
-	// Define a HandlerEx callback that thunks back into this service instance
+	// Define a static HandlerEx callback that thunks back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
 		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
@@ -431,30 +449,6 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// service_module::Dispatch
-//
-// Dispatches a filtered collection of services to either the service control
-// manager or the local dispatcher depending on the runtime context
-//
-// Arguments:
-//
-//	service		- Filtered collection of services to be dispatched
-
-int service_module::Dispatch(const std::vector<service_table_entry>& services)
-{
-	std::vector<SERVICE_TABLE_ENTRY>	table;			// Table of services to dispatch
-
-	// Create the SERVICE_TABLE_ENTRY array for StartServiceCtrlDispatcher
-	for(const auto& iterator : services) table.push_back(iterator.ServiceEntry);
-	table.push_back( { nullptr, nullptr } );
-
-	// Attempt to start the service control dispatcher
-	if(!StartServiceCtrlDispatcher(table.data())) return static_cast<int>(GetLastError());
-
-	return 0;
-}
-
-//-----------------------------------------------------------------------------
 // service_module::ModuleMain
 //
 // Implements the entry point for the service module
@@ -477,11 +471,14 @@ int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
 	UNREFERENCED_PARAMETER(argc);
 	UNREFERENCED_PARAMETER(argv);
 
-	std::vector<service_table_entry> filtered;
+	std::vector<SERVICE_TABLE_ENTRY> filtered;
 	for(const auto& iterator : m_services) filtered.push_back(iterator);
+	filtered.push_back( { nullptr, nullptr } );
 
-	// Dispatch the filtered list of service classes
-	return Dispatch(filtered);
+	// Attempt to start the service control dispatcher
+	if(!StartServiceCtrlDispatcher(filtered.data())) return static_cast<int>(GetLastError());
+
+	return 0;
 }
 
 //-----------------------------------------------------------------------------

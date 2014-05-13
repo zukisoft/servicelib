@@ -195,12 +195,6 @@ namespace svctl {
 	typedef std::wstring	tstring;
 #endif
 
-	// svctl::report_status_func
-	//
-	// Function used to report a service status to either the service control manager
-	// or the local service dispatcher
-	typedef std::function<void(SERVICE_STATUS&)> report_status_func;
-
 	// svctl::signal_type
 	//
 	// Constant used to define the type of signal created by svctl::signal<>
@@ -504,37 +498,6 @@ namespace svctl {
 	// as a vector of unique pointers to control_handler instances ...
 	typedef std::vector<std::unique_ptr<svctl::control_handler>> control_handler_table;
 
-	// svctl::service_table_entry
-	//
-	// holds the static information necessary to dispatch a service class object
-	class service_table_entry
-	{
-	public:
-
-		// Instance Constructor
-		//
-		service_table_entry(const tchar_t* name, LPSERVICE_MAIN_FUNCTION servicemain) :
-			m_name(name), m_servicemain(servicemain) {}
-
-		// ServiceEntry
-		//
-		// Gets a SERVICE_TABLE_ENTRY for use with the system service dispatcher
-		__declspec(property(get=getServiceEntry)) SERVICE_TABLE_ENTRY ServiceEntry;
-		SERVICE_TABLE_ENTRY getServiceEntry(void) const { return { const_cast<tchar_t*>(m_name), m_servicemain }; };
-	
-	private:
-
-		// m_name
-		//
-		// Service name
-		const tchar_t* m_name;
-
-		// m_servicemain
-		//
-		// Pointer to the service's static ServiceMain() entry point
-		LPSERVICE_MAIN_FUNCTION m_servicemain;
-	};
-
 	// svctl::service
 	//
 	// Base class that implements a single service instance
@@ -545,10 +508,15 @@ namespace svctl {
 		// Destructor
 		virtual ~service()=default;
 
-		// ServiceMain
+		// ServiceMain<>
 		//
-		// Service entry point invoked when running as a service
-		void ServiceMain(int argc, tchar_t** argv);
+		// Service entry point
+		template<class _derived>
+		static void WINAPI ServiceMain(DWORD argc, tchar_t** argv)
+		{
+			std::unique_ptr<service> instance = std::make_unique<_derived>();
+			if(instance) instance->ServiceMain(static_cast<int>(argc), argv);
+		}
 
 	protected:
 		
@@ -584,6 +552,11 @@ namespace svctl {
 		//
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
+
+		// ServiceMain
+		//
+		// Service entry point
+		void ServiceMain(int argc, tchar_t** argv);
 
 		// SetNonPendingStatus_l
 		//
@@ -646,7 +619,7 @@ namespace svctl {
 		// m_statushandle
 		//
 		// Handle returned when the service control handler was registered
-		SERVICE_STATUS_HANDLE m_statushandle;
+		SERVICE_STATUS_HANDLE m_statushandle = 0;
 
 		// m_statuslock;
 		//
@@ -678,18 +651,13 @@ namespace svctl {
 
 		// Instance Constructor
 		//
-		service_module(const std::initializer_list<service_table_entry>& services) : m_services(services) {}
+		service_module(const std::initializer_list<SERVICE_TABLE_ENTRY>& services) : m_services(services) {}
 
 		// Destructor
 		//
 		virtual ~service_module()=default;
 
 	protected:
-
-		// Dispatch
-		//
-		// Dispatches a collection of services to the service control manager
-		int Dispatch(const std::vector<service_table_entry>& services);
 
 		// ModuleMain
 		//
@@ -701,20 +669,10 @@ namespace svctl {
 		service_module(const service_module&)=delete;
 		service_module& operator=(const service_module&)=delete;
 
-		// LocalServiceThread
-		//
-		// Local service dispatcher service execution thread
-		static unsigned __stdcall LocalServiceThread(void* arg);
-
-		// StartLocalServiceDispatcher
-		//
-		// Emulates StartServiceCtrlDispatcher when run as a normal application
-		int StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY table);
-
 		// m_services
 		//
-		// Collection of all service_table_entry structures for each service
-		const std::vector<service_table_entry> m_services;
+		// Collection of all SERVICE_TABLE_ENTRY structures for each service
+		const std::vector<SERVICE_TABLE_ENTRY> m_services;
 	};
 
 } // namespace svctl
@@ -834,35 +792,19 @@ public:
 	// s_tableentry
 	//
 	// Container for the static service class data
-	static svctl::service_table_entry s_tableentry;
+	static SERVICE_TABLE_ENTRY s_tableentry;
 
 private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
-
-	// StaticServiceMain
-	//
-	// Service class entry point when running as a service
-	static void WINAPI StaticServiceMain(DWORD argc, LPTSTR* argv);
 };
 
 // Service<_derived>::s_tableentry (private, static)
 //
-// Defines the static service_table_entry information for this service class
+// Defines the static SERVICE_TABLE_ENTRY information for this service class
 template<class _derived>
-svctl::service_table_entry Service<_derived>::s_tableentry(_derived::s_getName(), _derived::StaticServiceMain);
-
-// Service<_derived>::StaticServiceMain (private, static)
-//
-// Static entry point for the service when run as a service process
-template<class _derived>
-void Service<_derived>::StaticServiceMain(DWORD argc, LPTSTR* argv)
-{
-	// Construct the derived service class object and invoke the non-static entry point
-	std::unique_ptr<svctl::service> instance = std::make_unique<_derived>();
-	instance->ServiceMain(static_cast<int>(argc), argv);
-}
+SERVICE_TABLE_ENTRY Service<_derived>::s_tableentry = { const_cast<svctl::tchar_t*>(_derived::s_getName()), &svctl::service::ServiceMain<_derived> };
 
 //-----------------------------------------------------------------------------
 // ServiceModule<>

@@ -513,14 +513,8 @@ namespace svctl {
 
 		// Instance Constructor
 		//
-		service_table_entry(const tchar_t* name, LPSERVICE_MAIN_FUNCTION servicemain, LPSERVICE_MAIN_FUNCTION localmain) :
-			m_name(name), m_servicemain(servicemain), m_localmain(localmain) {}
-
-		// LocalServiceEntry
-		//
-		// Gets a SERVICE_TABLE_ENTRY for use with the local service dispatcher
-		__declspec(property(get=getLocalServiceEntry)) SERVICE_TABLE_ENTRY LocalServiceEntry;
-		SERVICE_TABLE_ENTRY getLocalServiceEntry(void) const { return SERVICE_TABLE_ENTRY { const_cast<tchar_t*>(m_name), m_localmain }; };
+		service_table_entry(const tchar_t* name, LPSERVICE_MAIN_FUNCTION servicemain) :
+			m_name(name), m_servicemain(servicemain) {}
 
 		// ServiceEntry
 		//
@@ -539,11 +533,6 @@ namespace svctl {
 		//
 		// Pointer to the service's static ServiceMain() entry point
 		LPSERVICE_MAIN_FUNCTION m_servicemain;
-
-		// m_localmain
-		//
-		// Pointer to the service's static LocalMain() entry point
-		LPSERVICE_MAIN_FUNCTION m_localmain;		
 	};
 
 	// svctl::service
@@ -555,11 +544,6 @@ namespace svctl {
 
 		// Destructor
 		virtual ~service()=default;
-
-		// LocalMain
-		//
-		// Service entry point invoked when running as a normal process
-		void LocalMain(int argc, tchar_t** argv);
 
 		// ServiceMain
 		//
@@ -856,11 +840,6 @@ private:
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
 
-	// StaticLocalMain
-	//
-	// Service class entry point used when running as a normal application
-	static void WINAPI StaticLocalMain(DWORD argc, LPTSTR* argv);
-	
 	// StaticServiceMain
 	//
 	// Service class entry point when running as a service
@@ -871,18 +850,7 @@ private:
 //
 // Defines the static service_table_entry information for this service class
 template<class _derived>
-svctl::service_table_entry Service<_derived>::s_tableentry(_derived::s_getName(), _derived::StaticServiceMain, _derived::StaticLocalMain);
-
-// Service<_derived>::StaticLocalMain (private, static)
-//
-// Static entry point for the service when run as a normal process
-template<class _derived>
-void Service<_derived>::StaticLocalMain(DWORD argc, LPTSTR* argv)
-{
-	// Construct the derived service class object and invoke the non-static entry point
-	std::unique_ptr<svctl::service> instance = std::make_unique<_derived>();
-	instance->LocalMain(static_cast<int>(argc), argv);
-}
+svctl::service_table_entry Service<_derived>::s_tableentry(_derived::s_getName(), _derived::StaticServiceMain);
 
 // Service<_derived>::StaticServiceMain (private, static)
 //

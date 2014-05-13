@@ -194,27 +194,6 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 }
 
 //-----------------------------------------------------------------------------
-// service::LocalMain
-//
-// Service entry point when process is being run as a normal application
-//
-// Arguments:
-//
-//	argc		- Number of command line arguments
-//	argv		- Array of command-line argument strings
-
-void service::LocalMain(int argc, tchar_t** argv)
-{
-	UNREFERENCED_PARAMETER(argc);
-	UNREFERENCED_PARAMETER(argv);
-
-	// Create a service status report function that reports to the local dispatcher
-	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
-		UNREFERENCED_PARAMETER(status);
-	};
-}
-
-//-----------------------------------------------------------------------------
 // service::ServiceMain
 //
 // Service entry point when process is being run as a service

@@ -55,56 +55,13 @@ BEGIN_NAMESPACE(svctl)
 int service_module::Dispatch(const std::vector<service_table_entry>& services)
 {
 	std::vector<SERVICE_TABLE_ENTRY>	table;			// Table of services to dispatch
-	int									result = 0;		// Result from function call
 
 	// Create the SERVICE_TABLE_ENTRY array for StartServiceCtrlDispatcher
 	for(const auto& iterator : services) table.push_back(iterator.ServiceEntry);
 	table.push_back( { nullptr, nullptr } );
 
 	// Attempt to start the service control dispatcher
-	if(!StartServiceCtrlDispatcher(table.data())) {
-	
-		result = static_cast<int>(GetLastError());		// Get the result code
-
-		// ERROR_FAILED_SERVICE_CONTROLLER_CONNECT is indicated when the module is being
-		// executed in a normal runtime context as opposed to a service runtime context
-		if(result == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) {
-	
-			// Clear and reinitialize the SERVICE_TABLE_ENTRY array using the local entries
-			// and invoke the local service dispatcher instead
-			table.clear();
-			for(const auto& iterator : services) table.push_back(iterator.LocalServiceEntry);
-			table.push_back( { nullptr, nullptr } );
-			result = StartLocalServiceDispatcher(table.data());
-		}
-	}
-
-	return result;
-}
-
-//-----------------------------------------------------------------------------
-// service_module::LocalServiceThread (private, static)
-//
-// Entry point for a local service dispatcher thread
-//
-// Arguments:
-//
-//	arg		- Argument passed to _beginthreadex()
-
-unsigned service_module::LocalServiceThread(void* arg)
-{
-	_ASSERTE(arg != nullptr);
-
-	// The argument passed into the worker thread is the SERVICE_TABLE_ENTRY
-	LPSERVICE_TABLE_ENTRY entry = reinterpret_cast<LPSERVICE_TABLE_ENTRY>(arg);
-
-	// TODO: Don't need this anymore, arg should instead be used for the entry
-	// as well a full command line argument set to facilitate that functionality
-
-	// Local dispatcher doesn't support start arguments, but the service name
-	// must be set as argument zero for compatibility
-	std::array<tchar_t*, 2> argv = { entry->lpServiceName, nullptr };
-	entry->lpServiceProc(1, argv.data());
+	if(!StartServiceCtrlDispatcher(table.data())) return static_cast<int>(GetLastError());
 
 	return 0;
 }
@@ -137,72 +94,6 @@ int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
 
 	// Dispatch the filtered list of service classes
 	return Dispatch(filtered);
-}
-
-//-----------------------------------------------------------------------------
-// service_module::StartLocalServiceDispatcher (private)
-//
-// Emulates the StartServiceCtrlDispatcher system function to execute a collection
-// of services in a normal user-mode application context
-//
-// Arguments:
-//
-//	table		- Table of services to dispatch
-
-int service_module::StartLocalServiceDispatcher(LPSERVICE_TABLE_ENTRY table)
-{
-	std::vector<HANDLE>			threads;		// Worker thread handles
-	int							result;			// Result from function call
-
-	// Create a suspended worker thread for each service in the service table
-	for(LPSERVICE_TABLE_ENTRY entry = table; entry->lpServiceName; entry++) {
-
-		// Attempt to create a suspended worker thread for the service
-		uintptr_t thread = _beginthreadex(nullptr, 0, LocalServiceThread, entry, CREATE_SUSPENDED, nullptr);
-		if(thread == 0) {
-
-			// Unable to create one of the worker threads, close out the ones that have been
-			// successfully created and bail (should probably convert errno to Win32 here)
-			_get_errno(&result);
-			for(const auto& iterator : threads) CloseHandle(iterator);
-			return result;
-		}
-
-		// Keep track of the newly created thread as a normal Win32 HANDLE
-		threads.push_back(reinterpret_cast<HANDLE>(thread));
-	}
-
-	// Start all the worker threads
-	for(const auto& iterator : threads) ResumeThread(iterator);
-
-	//
-	// TODO: The idea here is to have a command processor that allows the user
-	// to control the services as if they were the SCM.  For example ....
-	//
-	// start myservice [args]
-	// pause myservice
-	// list services
-	// etc.
-	//
-	// when the last service stops, the process exits just like it would normally
-	// trace messages (when I get there) would display in the console
-	//
-	// this is dummy code:
-	HWND console = GetConsoleWindow();
-	bool freeconsole = false;
-	if(console == nullptr) freeconsole = AllocConsole() ? true : false;
-
-	// end dummy code
-
-	// Wait for all the worker threads to terminate and closet their handles
-	WaitForMultipleObjects(threads.size(), threads.data(), TRUE, INFINITE);
-	for(const auto& iterator : threads) CloseHandle(iterator);
-
-	// dummy
-	if(freeconsole) FreeConsole();
-	// end dummy
-
-	return 0;
 }
 
 END_NAMESPACE(svctl)

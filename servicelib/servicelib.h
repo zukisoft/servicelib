@@ -177,6 +177,13 @@ inline ServiceProcessType& operator^=(ServiceProcessType& lhs, ServiceProcessTyp
 
 namespace svctl {
 
+	// svctl::MAX_SERVICES
+	//
+	// Defines the maximum number of services that can be hosted in the module;
+	// see service_table_entry below -- a global table needed to be generated
+	// in order to allow for dynamic service names and service process types
+	const int MAX_SERVICES = 32;
+
 	// svctl::char_t
 	//
 	// ANSI string character type
@@ -193,6 +200,16 @@ namespace svctl {
 	typedef std::wstring	tstring;
 #endif
 
+	// svctl::report_status_func
+	//
+	// Function used to report a service status to the service control manager
+	typedef std::function<void(SERVICE_STATUS&)> report_status_func;
+
+	// svctl::service_main_func
+	//
+	// Function used to define a service-specific static ServiceMain() entry point
+	typedef std::function<void(const tchar_t*, ServiceProcessType, int, tchar_t**)> service_main_func;
+ 
 	// svctl::signal_type
 	//
 	// Constant used to define the type of signal created by svctl::signal<>
@@ -510,19 +527,19 @@ namespace svctl {
 		//
 		// Service entry point
 		template<class _derived>
-		static void WINAPI ServiceMain(DWORD argc, tchar_t** argv)
+		static void ServiceMain(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv)
 		{
 			//
-			// TODO: can probably be a lambda in the SERVICE_TABLE_ENTRY instead
+			// TODO: make private?
 			//
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
-			if(instance) instance->ServiceMain(static_cast<int>(argc), argv);
+			if(instance) instance->ServiceMain(name, processtype, argc, argv);
 		}
 
 	protected:
 		
 		// Instance Constructor
-		service(const tchar_t* name, ServiceProcessType processtype);
+		service()=default;
 
 		// OnStart
 		//
@@ -563,7 +580,7 @@ namespace svctl {
 		// ServiceMain
 		//
 		// Service entry point
-		void ServiceMain(int argc, tchar_t** argv);
+		void ServiceMain(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv);
 
 		// SetNonPendingStatus_l
 		//
@@ -594,20 +611,10 @@ namespace svctl {
 		// Signal (event) object used to continue the service when paused
 		signal<signal_type::ManualReset> m_continuesignal;
 
-		// m_name
-		//
-		// Service name
-		const tstring m_name;
-
 		// m_pausesignal
 		//
 		// Signal (event) object used to pause the service
 		signal<signal_type::ManualReset> m_pausesignal;
-
-		// m_processtype
-		//
-		// Service process type
-		const ServiceProcessType m_processtype;
 
 		// m_status
 		//
@@ -619,11 +626,11 @@ namespace svctl {
 		// Holds any exception thrown by a status worker thread
 		std::exception_ptr m_statusexception;
 
-		// m_statushandle
+		// m_statusfunc
 		//
-		// Handle returned when the service control handler was registered
-		SERVICE_STATUS_HANDLE m_statushandle = 0;
-
+		// Function pointer used to report an updated service status
+		report_status_func m_statusfunc;
+ 
 		// m_statuslock;
 		//
 		// CRITICAL_SECTION synchronization object for status updates
@@ -676,6 +683,100 @@ namespace svctl {
 		//
 		// Collection of all SERVICE_TABLE_ENTRY structures for each service
 		const std::vector<SERVICE_TABLE_ENTRY> m_services;
+	};
+
+	// svctl::service_table_entry
+	//
+	// Used to define a global table of service entries that each possess a unique static
+	// ServiceMain() function that can invoke a derived service's ServiceMain with dynamically
+	// defined name and process type values
+	class service_table_entry
+	{
+	friend class service_module;
+	public:
+
+		// Instance Constructor
+		service_table_entry(LPSERVICE_MAIN_FUNCTION stubmain) : m_stubmain(stubmain) {}
+
+		// Invoke
+		//
+		// Invokes the actual ServiceMain() using the arguments set for this entry
+		void Invoke(DWORD argc, tchar_t** argv) 
+		{
+			_ASSERTE(m_name);
+			_ASSERTE(m_servicemain != nullptr);
+			_ASSERTE(static_cast<int>(m_processtype) != 0);
+
+			// Invoke the service::ServiceMain<T> assigned to this table entry slot
+			m_servicemain(m_name, m_processtype, static_cast<int>(argc), argv);
+		}
+
+	private:
+
+		// operator SERVICE_TABLE_ENTRY()
+		//
+		// Converts this instance into a SERVICE_TABLE_ENTRY structure
+		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_stubmain }; }
+
+		// m_name
+		//
+		// Defines what the runtime name of the service will be
+		const tchar_t* m_name = nullptr;
+
+		// m_processtype
+		//
+		// Defines what the runtime process type of the service will be
+		ServiceProcessType m_processtype = static_cast<ServiceProcessType>(0);
+
+		// m_servicemain
+		//
+		// Points to the service::ServiceMain<T> for this service entry
+		std::function<void(const tchar_t*, ServiceProcessType, int, tchar_t**)> m_servicemain;
+
+		// m_stubmain
+		//
+		// Defines the stub ServiceMain() function defined for this entry
+		LPSERVICE_MAIN_FUNCTION m_stubmain;
+	};
+
+	// g_servicetable
+	//
+	// Defines each of the global service_table_entry objects with unique ServiceMain() functions
+	__declspec(selectany)
+	service_table_entry g_servicetable[MAX_SERVICES] = {		// 32
+
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[0].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[1].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[2].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[3].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[4].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[5].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[6].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[7].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[8].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[9].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[10].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[11].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[12].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[13].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[14].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[15].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[16].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[17].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[18].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[19].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[20].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[21].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[22].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[23].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[24].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[25].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[26].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[27].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[28].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[29].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[30].Invoke(argc, argv); }),
+		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[31].Invoke(argc, argv); }),
 	};
 
 } // namespace svctl
@@ -826,11 +927,21 @@ class Service : public svctl::service
 friend class ServiceModule<_derived>;
 public:
 
-	// Instance Constructor
-	Service() : svctl::service(_derived::s_getName(), _derived::s_getProcessType()) {}
-
-	// Destructor
+	// Constructor / Destructor
+	Service()=default;
 	virtual ~Service()=default;
+
+	//////////////////////////
+	static SERVICE_TABLE_ENTRY CreateSERVICE_TABLE_ENTRY(const svctl::tchar_t* name, ServiceProcessType processtype)
+	{
+		_ASSERTE(name);
+		(processtype);
+		//std::function<void(const svctl::tchar_t*, ServiceProcessType, int, svctl::tchar_t**)> entry = &svctl::service::ServiceMain<_derived>;
+		//LPSERVICE_MAIN_FUNCTION main = [=](DWORD argc, LPTSTR* argv) -> void { entry(name, processtype, static_cast<int>(argc), argv); };
+		return { const_cast<svctl::tchar_t*>(name), nullptr };
+	}
+
+	//////////////////////////
 
 private:
 
@@ -847,7 +958,58 @@ private:
 //
 // Defines the static SERVICE_TABLE_ENTRY information for this service class
 template<class _derived>
-SERVICE_TABLE_ENTRY Service<_derived>::s_tableentry = { const_cast<svctl::tchar_t*>(_derived::s_getName()), &svctl::service::ServiceMain<_derived> };
+SERVICE_TABLE_ENTRY Service<_derived>::s_tableentry = _derived::CreateSERVICE_TABLE_ENTRY(_T("MyService"), ServiceProcessType::Unique);
+
+
+
+////////////////////////////////
+
+namespace svctl {
+
+	// TODO: move me
+	class service_entry
+	{
+	protected:
+
+		// Instance constructor
+		service_entry(const tchar_t* name, ServiceProcessType processtype, const service_main_func& servicemain) :
+			m_name(name), m_processtype(processtype), m_servicemain(servicemain) {}
+
+	private:
+
+		service_entry(const service_entry&)=delete;
+		service_entry& operator=(const service_entry&)=delete;
+
+		// m_name
+		//
+		// The service name
+		const tchar_t* m_name;
+
+		// m_processtype
+		//
+		// The service process type
+		const ServiceProcessType m_processtype;
+
+		// m_servicemain
+		//
+		// The service ServiceMain() static entry point
+		const service_main_func m_servicemain;
+	};
+};
+
+template <class _derived>
+class ServiceEntry : public svctl::service_entry
+{
+public:
+
+	ServiceEntry(const svctl::tchar_t* name) : ServiceEntry(name, ServiceProcessType::Unique) {}
+	ServiceEntry(const svctl::tchar_t* name, ServiceProcessType processtype)
+		: service_entry(name, processtype, &svctl::service::ServiceMain<_derived>)
+	{
+	}
+};
+
+//////////////////////////////
 
 //-----------------------------------------------------------------------------
 

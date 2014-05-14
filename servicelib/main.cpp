@@ -60,6 +60,8 @@ public:
 		return v;
 	}
 
+	svctl::tchar_t* TestGetName(void) { return L"MyService"; }
+
 private:
 
 	MyService(const MyService&)=delete;
@@ -81,6 +83,9 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	_CrtSetDbgFlag(nDbgFlags);								// Set the new flags
 
 #endif	// _DEBUG
+
+	////std::vector<svctl::service_entry&&> table = { std::move(ServiceEntry<MyService>(L"Hello")) };
+	ServiceEntry<MyService> myservice(_T("MyService"));
 
 	ServiceModule<MyService> module;
 	return module.WinMain(hInstance, hPrevInstance, lpCmdLine, nCmdShow);

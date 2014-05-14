@@ -92,17 +92,6 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// service Constructor
-//
-// Arguments:
-//
-//	name			- Service name
-//	processtype		- Servuice process type
-//	handlers		- Service control handler table
-
-service::service(const tchar_t* name, ServiceProcessType processtype) : m_name(name), m_processtype(processtype) {}
-
-//-----------------------------------------------------------------------------
 // service::ControlHandler (private)
 //
 // Handles a service control request from the service control manager
@@ -219,22 +208,34 @@ const control_handler_table& service::getHandlers(void) const
 //-----------------------------------------------------------------------------
 // service::ServiceMain (private)
 //
-// Service entry point
+// Service instance entry point
 //
 // Arguments:
 //
-//	argc		- Number of command line arguments
-//	argv		- Array of command-line argument strings
+//	name			- Service name
+//	processtype		- Service process type
+//	argc			- Number of command line arguments
+//	argv			- Array of command line argument strings
 
-void service::ServiceMain(int argc, tchar_t** argv)
+void service::ServiceMain(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv)
 {
-	// Define a static HandlerEx callback that thunks back into this service instance
+	_ASSERTE(name);										// Should never be a NULL pointer on entry
+
+	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
 		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
-	// Register the service control handler for this service using the handler defined above
-	m_statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), handler, this);
-	if(m_statushandle == 0) throw winexception();
+	// Register a service control handler for this service instance
+	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(name, handler, this);
+	if(statushandle == 0) throw winexception();
+
+	// Define a status reporting function that uses the handle and process types defined above
+	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
+
+		_ASSERTE(statushandle != 0);
+		status.dwServiceType = static_cast<DWORD>(processtype);
+		if(!SetServiceStatus(statushandle, &status)) throw winexception();
+	};
 
 	try {
 
@@ -320,12 +321,12 @@ void service::ServiceMain(int argc, tchar_t** argv)
 // CAUTION: m_statuslock should be locked before calling this function
 void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
-	_ASSERTE(m_statushandle != 0);								// Should have been set
-	_ASSERTE(!m_statusworker.joinable());						// Should not be running
+	_ASSERTE(m_statusfunc);							// Needs to be set
+	_ASSERTE(!m_statusworker.joinable());			// Should not be running
 
 	// Create and initialize a new SERVICE_STATUS for this operation
 	SERVICE_STATUS newstatus;
-	newstatus.dwServiceType = static_cast<DWORD>(m_processtype);
+	newstatus.dwServiceType = 0;	// <-- set in the report_status_func
 	newstatus.dwCurrentState = static_cast<DWORD>(status);
 	newstatus.dwControlsAccepted = (status == ServiceStatus::Stopped) ? 0 : AcceptedControls;
 	newstatus.dwWin32ExitCode = (status == ServiceStatus::Stopped) ? win32exitcode : ERROR_SUCCESS;
@@ -333,7 +334,7 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 	newstatus.dwCheckPoint = 0;
 	newstatus.dwWaitHint = 0;
 
-	if(!SetServiceStatus(m_statushandle, &newstatus)) throw winexception();
+	m_statusfunc(newstatus);						// Set the non-pending status
 }
 
 //-----------------------------------------------------------------------------
@@ -348,8 +349,8 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 // CAUTION: m_statuslock should be locked before calling this function
 void service::SetPendingStatus_l(ServiceStatus status)
 {
-	_ASSERTE(m_statushandle != 0);							// Needs to have been set
-	_ASSERTE(!m_statusworker.joinable());					// Should not be running
+	_ASSERTE(m_statusfunc);							// Needs to be set
+	_ASSERTE(!m_statusworker.joinable());			// Should not be running
 
 	// Block all controls during SERVICE_START_PENDING and SERVICE_STOP_PENDING only
 	DWORD accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 
@@ -362,7 +363,7 @@ void service::SetPendingStatus_l(ServiceStatus status)
 
 			// Create and initialize a new SERVICE_STATUS for this operation
 			SERVICE_STATUS pendingstatus;
-			pendingstatus.dwServiceType = static_cast<DWORD>(m_processtype);
+			pendingstatus.dwServiceType = 0;	// <-- set in the report_status_func
 			pendingstatus.dwCurrentState = static_cast<DWORD>(status);
 			pendingstatus.dwControlsAccepted = accept;
 			pendingstatus.dwWin32ExitCode = ERROR_SUCCESS;
@@ -371,13 +372,13 @@ void service::SetPendingStatus_l(ServiceStatus status)
 			pendingstatus.dwWaitHint = (status == ServiceStatus::StartPending) ? STARTUP_WAIT_HINT : PENDING_WAIT_HINT;
 
 			// Set the initial pending status
-			if(!SetServiceStatus(m_statushandle, &pendingstatus)) throw winexception();
+			m_statusfunc(pendingstatus);
 
 			// Continually report the same pending status with an incremented checkpoint until signaled
 			while(WaitForSingleObject(m_statussignal, PENDING_CHECKPOINT_INTERVAL) == WAIT_TIMEOUT) {
 
 				++pendingstatus.dwCheckPoint;
-				if(!SetServiceStatus(m_statushandle, &pendingstatus)) throw winexception();
+				m_statusfunc(pendingstatus);
 			}
 		}
 

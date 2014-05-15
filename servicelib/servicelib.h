@@ -652,37 +652,48 @@ namespace svctl {
 		signal<signal_type::ManualReset> m_stopsignal;
 	};
 
-	// svctl::service_module
+	// svctl::service_entry
 	//
-	// Base class that implements the module-level service processing code
-	class service_module
+	// Defines a name and entry point for an svctl::service derived class
+	class service_entry
 	{
 	public:
 
-		// Instance Constructor
-		//
-		service_module(const std::initializer_list<SERVICE_TABLE_ENTRY>& services) : m_services(services) {}
+		// Copy Constructor
+		service_entry(const service_entry&)=default;
 
-		// Destructor
+		// Assignment Operator
+		service_entry& operator=(const service_entry&)=default;
+
+		// Name
 		//
-		virtual ~service_module()=default;
+		// Gets the service name
+		__declspec(property(get=getName)) const tchar_t* Name;
+		const tchar_t* getName(void) const { return m_name; }
+
+		// ServiceMain
+		//
+		// Gets the address of the service::ServiceMain function
+		__declspec(property(get=getServiceMain)) const service_main_func& ServiceMain;
+		const service_main_func& getServiceMain(void) const { return m_servicemain; }
 
 	protected:
 
-		// ModuleMain
-		//
-		// Module entry point function
-		int ModuleMain(int argc, tchar_t** argv);
+		// Instance constructor
+		service_entry(const tchar_t* name, const service_main_func& servicemain) :
+			m_name(name), m_servicemain(servicemain) {}
 
 	private:
 
-		service_module(const service_module&)=delete;
-		service_module& operator=(const service_module&)=delete;
-
-		// m_services
+		// m_name
 		//
-		// Collection of all SERVICE_TABLE_ENTRY structures for each service
-		const std::vector<SERVICE_TABLE_ENTRY> m_services;
+		// The service name
+		const tchar_t* m_name;
+
+		// m_servicemain
+		//
+		// The service ServiceMain() static entry point
+		service_main_func m_servicemain;
 	};
 
 	// svctl::service_table_entry
@@ -692,12 +703,25 @@ namespace svctl {
 	// defined name and process type values
 	class service_table_entry
 	{
-	friend class service_module;
 	public:
 
 		// Instance Constructor
 		service_table_entry(LPSERVICE_MAIN_FUNCTION stubmain) : m_stubmain(stubmain) {}
 
+		// operator SERVICE_TABLE_ENTRY()
+		//
+		// Converts this instance into a SERVICE_TABLE_ENTRY structure
+		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_stubmain }; }
+
+		
+		////
+		void Set(const tchar_t* name, ServiceProcessType processtype, const service_main_func& servicemain)
+		{
+			m_name = name;
+			m_processtype = processtype;
+			m_servicemain = servicemain;
+		}
+		
 		// Invoke
 		//
 		// Invokes the actual ServiceMain() using the arguments set for this entry
@@ -712,11 +736,6 @@ namespace svctl {
 		}
 
 	private:
-
-		// operator SERVICE_TABLE_ENTRY()
-		//
-		// Converts this instance into a SERVICE_TABLE_ENTRY structure
-		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_stubmain }; }
 
 		// m_name
 		//
@@ -786,6 +805,13 @@ namespace svctl {
 //
 // Namespace: (GLOBAL)
 //-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// ::ServiceTable
+//
+// Typedef around a vector of svctl::service_entry objects
+
+typedef std::vector<svctl::service_entry> ServiceTable;
 
 //-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
@@ -876,39 +902,72 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// ::ServiceEntry<>
+//
+// Defines a single service to be operated on by ServiceModule
+
+// TODO: Rename me ServiceTableEntry, rename service_table_entry to something else
+
+template <class _derived>
+struct ServiceEntry : public svctl::service_entry
+{
+	// Instance constructor
+	explicit ServiceEntry(const svctl::tchar_t* name) : service_entry(name, &svctl::service::ServiceMain<_derived>) {}
+};
+
+//-----------------------------------------------------------------------------
 // ServiceModule<>
 //
 // Service process module implementation
-template<class... _services>
-class ServiceModule : public svctl::service_module
+//////template<class... _services>
+class ServiceModule ////: public svctl::service_module
 {
 public:
 
 	// Instance Constructor
 	//
-	explicit ServiceModule() : service_module({ (_services::s_tableentry)... }) {}
+	/////explicit ServiceModule() : service_module({ (_services::s_tableentry)... }) {}
+	ServiceModule()=default;
 
 	// Destructor
 	//
 	virtual ~ServiceModule()=default;
 
+	template<class _service>
+	static int Dispatch(LPCTSTR name)
+	{
+		return Dispatch( { ServiceEntry<_service>(name) } );
+	}
+
+	static int Dispatch(const svctl::service_entry& service)
+	{
+		// Create a vector<> containing just the single service entry
+		return Dispatch(std::vector<svctl::service_entry> { service });
+	}
+
+	static int Dispatch(const ServiceTable& services);
+
 	// main
 	//
 	// Entry point for console application modules
-	int main(int argc, LPTSTR* argv)
-	{
-		// Pass the command line arguments into the base class implementation
-		return service_module::ModuleMain(argc, argv);
-	}
+	//int main(int argc, LPTSTR* argv)
+	//{
+	//	(argc);
+	//	(argv);
+	//	// Pass the command line arguments into the base class implementation
+	//	///return service_module::ModuleMain(argc, argv);
+	//	return 0;
+	//}
 
-	// WinMain
-	//
-	// Entry point for Windows application modules
-	int WinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
-	{
-		// Pass the main() style command line arguments into the base class implementation
-		return service_module::ModuleMain(__argc, __targv);
-	}
+	//// WinMain
+	////
+	//// Entry point for Windows application modules
+	//int WinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
+	//{
+	//	// Pass the main() style command line arguments into the base class implementation
+	//	//return service_module::ModuleMain(__argc, __targv);
+	//	return 0;
+	//}
 
 private:
 
@@ -917,99 +976,12 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// ::Service<>
+// ::Service
 //
-// Template-based wrapper class around the svctl::service base class
+// Global namespace typedef around svctl::service
 
-template<class _derived>
-class Service : public svctl::service
-{
-friend class ServiceModule<_derived>;
-public:
-
-	// Constructor / Destructor
-	Service()=default;
-	virtual ~Service()=default;
-
-	//////////////////////////
-	static SERVICE_TABLE_ENTRY CreateSERVICE_TABLE_ENTRY(const svctl::tchar_t* name, ServiceProcessType processtype)
-	{
-		_ASSERTE(name);
-		(processtype);
-		//std::function<void(const svctl::tchar_t*, ServiceProcessType, int, svctl::tchar_t**)> entry = &svctl::service::ServiceMain<_derived>;
-		//LPSERVICE_MAIN_FUNCTION main = [=](DWORD argc, LPTSTR* argv) -> void { entry(name, processtype, static_cast<int>(argc), argv); };
-		return { const_cast<svctl::tchar_t*>(name), nullptr };
-	}
-
-	//////////////////////////
-
-private:
-
-	Service(const Service&)=delete;
-	Service& operator=(const Service&)=delete;
-
-	// s_tableentry
-	//
-	// Container for the static service class data
-	static SERVICE_TABLE_ENTRY s_tableentry;
-};
-
-// Service<_derived>::s_tableentry (private, static)
-//
-// Defines the static SERVICE_TABLE_ENTRY information for this service class
-template<class _derived>
-SERVICE_TABLE_ENTRY Service<_derived>::s_tableentry = _derived::CreateSERVICE_TABLE_ENTRY(_T("MyService"), ServiceProcessType::Unique);
-
-
-
-////////////////////////////////
-
-namespace svctl {
-
-	// TODO: move me
-	class service_entry
-	{
-	protected:
-
-		// Instance constructor
-		service_entry(const tchar_t* name, ServiceProcessType processtype, const service_main_func& servicemain) :
-			m_name(name), m_processtype(processtype), m_servicemain(servicemain) {}
-
-	private:
-
-		service_entry(const service_entry&)=delete;
-		service_entry& operator=(const service_entry&)=delete;
-
-		// m_name
-		//
-		// The service name
-		const tchar_t* m_name;
-
-		// m_processtype
-		//
-		// The service process type
-		const ServiceProcessType m_processtype;
-
-		// m_servicemain
-		//
-		// The service ServiceMain() static entry point
-		const service_main_func m_servicemain;
-	};
-};
-
-template <class _derived>
-class ServiceEntry : public svctl::service_entry
-{
-public:
-
-	ServiceEntry(const svctl::tchar_t* name) : ServiceEntry(name, ServiceProcessType::Unique) {}
-	ServiceEntry(const svctl::tchar_t* name, ServiceProcessType processtype)
-		: service_entry(name, processtype, &svctl::service::ServiceMain<_derived>)
-	{
-	}
-};
-
-//////////////////////////////
+// TODO: just move svctl::service into the global namespace as "Service"
+typedef svctl::service Service;
 
 //-----------------------------------------------------------------------------
 

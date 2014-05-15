@@ -32,7 +32,7 @@
 #undef BEGIN_NAMESPACE
 #undef END_NAMESPACE
 #define BEGIN_NAMESPACE(ns)		namespace ns {
-#define END_NAMESPACE(ns)		}
+#define END_NAMESPACE(ns)		};
 
 //-----------------------------------------------------------------------------
 
@@ -451,43 +451,6 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 }
 
 //-----------------------------------------------------------------------------
-// svctl::service_module
-//-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
-// service_module::ModuleMain
-//
-// Implements the entry point for the service module
-//
-// Arguments:
-//
-//	argc		- Number of command line arguments
-//	argv		- Array of command line argument strings
-
-int service_module::ModuleMain(int argc, svctl::tchar_t** argv)
-{
-	// PROCESS COMMAND LINE ARGUMENTS TO FILTER THE LIST
-	// run
-	// install
-	// uninstall
-	// regserver
-	// unregserver
-	// and so on
-
-	UNREFERENCED_PARAMETER(argc);
-	UNREFERENCED_PARAMETER(argv);
-
-	std::vector<SERVICE_TABLE_ENTRY> filtered;
-	for(const auto& iterator : m_services) filtered.push_back(iterator);
-	filtered.push_back( { nullptr, nullptr } );
-
-	// Attempt to start the service control dispatcher
-	if(!StartServiceCtrlDispatcher(filtered.data())) return static_cast<int>(GetLastError());
-
-	return 0;
-}
-
-//-----------------------------------------------------------------------------
 // svctl::winexception
 //-----------------------------------------------------------------------------
 
@@ -514,9 +477,44 @@ winexception::winexception(DWORD result) : m_code(result)
 	else m_what = "Unknown Windows status code " + std::to_string(result);
 }
 
+END_NAMESPACE(svctl)
+
+//-----------------------------------------------------------------------------
+// ::ServiceModule
 //-----------------------------------------------------------------------------
 
-END_NAMESPACE(svctl)
+//-----------------------------------------------------------------------------
+// ServiceModule::Dispatch (static)
+//
+// Dispatches a collection of services to the service control manager
+//
+// Arguments:
+//
+//	services		- Collection of service_entry objects
+
+int ServiceModule::Dispatch(const std::vector<svctl::service_entry>& services)
+{
+	//// TODO
+	if(services.size() > svctl::MAX_SERVICES) { throw svctl::winexception(E_FAIL); }
+
+	// Determine the service process type to set based on the number of services
+	ServiceProcessType processtype = (services.size() > 1) ? ServiceProcessType::Shared : ServiceProcessType::Unique;
+
+	std::vector<SERVICE_TABLE_ENTRY> table;
+	for(size_t index = 0; index < services.size(); index++) {
+
+		const svctl::service_entry& entry = services[index];
+		svctl::g_servicetable[index].Set(entry.Name, processtype, entry.ServiceMain);
+		table.push_back(svctl::g_servicetable[index]);
+	}
+
+	table.push_back( { nullptr, nullptr } );
+
+	// Attempt to start the service control dispatcher
+	if(!StartServiceCtrlDispatcher(table.data())) return static_cast<int>(GetLastError());
+
+	return 0;
+}
 
 //-----------------------------------------------------------------------------
 

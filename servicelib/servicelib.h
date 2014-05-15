@@ -513,145 +513,6 @@ namespace svctl {
 	// as a vector of unique pointers to control_handler instances ...
 	typedef std::vector<std::unique_ptr<svctl::control_handler>> control_handler_table;
 
-	// svctl::service
-	//
-	// Base class that implements a single service instance
-	class service : virtual private auxiliary_state_machine
-	{
-	public:
-
-		// Destructor
-		virtual ~service()=default;
-
-		// ServiceMain<>
-		//
-		// Service entry point
-		template<class _derived>
-		static void ServiceMain(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv)
-		{
-			//
-			// TODO: make private?
-			//
-			std::unique_ptr<service> instance = std::make_unique<_derived>();
-			if(instance) instance->ServiceMain(name, processtype, argc, argv);
-		}
-
-	protected:
-		
-		// Instance Constructor
-		service()=default;
-
-		// OnStart
-		//
-		// Invoked when the service is started; must be implemented in the service
-		virtual void OnStart(int argc, tchar_t** argv) = 0;
-
-		// Handlers
-		//
-		// Gets the collection of service-specific control handlers
-		__declspec(property(get=getHandlers)) const control_handler_table& Handlers;
-		virtual const control_handler_table& getHandlers(void) const;
-
-	private:
-
-		service(const service&)=delete;
-		service& operator=(const service&)=delete;
-
-		// PENDING_CHECKPOINT_INTERVAL
-		//
-		// Interval at which the pending status thread will report progress
-		const uint32_t PENDING_CHECKPOINT_INTERVAL = 1000;
-
-		// PENDING_WAIT_HINT
-		//
-		// Standard wait hint used when a pending status has been set
-		const uint32_t PENDING_WAIT_HINT = 2000;
-
-		// STARTUP_WAIT_HINT
-		//
-		// Wait hint used during the initial service START_PENDING status
-		const uint32_t STARTUP_WAIT_HINT = 5000;
-
-		// ControlHandler
-		//
-		// Service control request handler method
-		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
-
-		// ServiceMain
-		//
-		// Service entry point
-		void ServiceMain(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv);
-
-		// SetNonPendingStatus_l
-		//
-		// Sets a non-pending status; m_cs should be locked before calling
-		void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-		void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
-
-		// SetPendingStatus_l
-		//
-		// Sets an auto-checkpoint pending status; m_cs should be locked before calling
-		void SetPendingStatus_l(ServiceStatus status);
-
-		// SetStatus
-		//
-		// Sets a new service status
-		void SetStatus(ServiceStatus status) { SetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-		void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
-		void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
-
-		// AcceptedControls
-		//
-		// Gets what control codes the service will accept
-		__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
-		DWORD getAcceptedControls(void) const;
-
-		// m_continuesignal
-		//
-		// Signal (event) object used to continue the service when paused
-		signal<signal_type::ManualReset> m_continuesignal;
-
-		// m_pausesignal
-		//
-		// Signal (event) object used to pause the service
-		signal<signal_type::ManualReset> m_pausesignal;
-
-		// m_status
-		//
-		// Current service status
-		ServiceStatus m_status = ServiceStatus::Stopped;
-
-		// m_statusexception
-		//
-		// Holds any exception thrown by a status worker thread
-		std::exception_ptr m_statusexception;
-
-		// m_statusfunc
-		//
-		// Function pointer used to report an updated service status
-		report_status_func m_statusfunc;
- 
-		// m_statuslock;
-		//
-		// CRITICAL_SECTION synchronization object for status updates
-		critical_section m_statuslock;
-
-		// m_statussignal
-		//
-		// Signal (event) object used to stop a pending status thread
-		signal<signal_type::ManualReset> m_statussignal;
-
-		// m_statusworker
-		//
-		// Pending status worker thread
-		std::thread m_statusworker;
-
-		// m_stopsignal
-		//
-		// Signal (event) object used to stop the service
-		signal<signal_type::ManualReset> m_stopsignal;
-	};
-
 	// svctl::service_entry
 	//
 	// Defines a name and entry point for an svctl::service derived class
@@ -912,11 +773,152 @@ template <class _derived>
 struct ServiceEntry : public svctl::service_entry
 {
 	// Instance constructor
-	explicit ServiceEntry(const svctl::tchar_t* name) : service_entry(name, &svctl::service::ServiceMain<_derived>) {}
+	explicit ServiceEntry(const svctl::tchar_t* name) : service_entry(name, &Service::ServiceMain<_derived>) {}
 };
 
 //-----------------------------------------------------------------------------
-// ServiceModule<>
+// ::Service
+//
+// Master service base class
+
+class Service : virtual private svctl::auxiliary_state_machine
+{
+public:
+
+	// Destructor
+	virtual ~Service()=default;
+
+	// ServiceMain<>
+	//
+	// Service entry point
+	template<class _derived>
+	static void ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv)
+	{
+		//
+		// TODO: make private?
+		//
+		std::unique_ptr<Service> instance = std::make_unique<_derived>();
+		if(instance) instance->ServiceMain(name, processtype, argc, argv);
+	}
+
+protected:
+		
+	// Instance Constructor
+	Service()=default;
+
+	// OnStart
+	//
+	// Invoked when the service is started; must be implemented in the service
+	virtual void OnStart(int argc, LPTSTR* argv) = 0;
+
+	// Handlers
+	//
+	// Gets the collection of service-specific control handlers
+	__declspec(property(get=getHandlers)) const svctl::control_handler_table& Handlers;
+	virtual const svctl::control_handler_table& getHandlers(void) const;
+
+private:
+
+	Service(const Service&)=delete;
+	Service& operator=(const Service&)=delete;
+
+	// PENDING_CHECKPOINT_INTERVAL
+	//
+	// Interval at which the pending status thread will report progress
+	const uint32_t PENDING_CHECKPOINT_INTERVAL = 1000;
+
+	// PENDING_WAIT_HINT
+	//
+	// Standard wait hint used when a pending status has been set
+	const uint32_t PENDING_WAIT_HINT = 2000;
+
+	// STARTUP_WAIT_HINT
+	//
+	// Wait hint used during the initial service START_PENDING status
+	const uint32_t STARTUP_WAIT_HINT = 5000;
+
+	// ControlHandler
+	//
+	// Service control request handler method
+	DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
+
+	// ServiceMain
+	//
+	// Service entry point
+	void ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv);
+
+	// SetNonPendingStatus_l
+	//
+	// Sets a non-pending status; m_cs should be locked before calling
+	void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+	void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+	// SetPendingStatus_l
+	//
+	// Sets an auto-checkpoint pending status; m_cs should be locked before calling
+	void SetPendingStatus_l(ServiceStatus status);
+
+	// SetStatus
+	//
+	// Sets a new service status
+	void SetStatus(ServiceStatus status) { SetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+	void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
+	void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+	// AcceptedControls
+	//
+	// Gets what control codes the service will accept
+	__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
+	DWORD getAcceptedControls(void) const;
+
+	// m_continuesignal
+	//
+	// Signal (event) object used to continue the service when paused
+	svctl::signal<svctl::signal_type::ManualReset> m_continuesignal;
+
+	// m_pausesignal
+	//
+	// Signal (event) object used to pause the service
+	svctl::signal<svctl::signal_type::ManualReset> m_pausesignal;
+
+	// m_status
+	//
+	// Current service status
+	ServiceStatus m_status = ServiceStatus::Stopped;
+
+	// m_statusexception
+	//
+	// Holds any exception thrown by a status worker thread
+	std::exception_ptr m_statusexception;
+
+	// m_statusfunc
+	//
+	// Function pointer used to report an updated service status
+	svctl::report_status_func m_statusfunc;
+ 
+	// m_statuslock;
+	//
+	// CRITICAL_SECTION synchronization object for status updates
+	svctl::critical_section m_statuslock;
+
+	// m_statussignal
+	//
+	// Signal (event) object used to stop a pending status thread
+	svctl::signal<svctl::signal_type::ManualReset> m_statussignal;
+
+	// m_statusworker
+	//
+	// Pending status worker thread
+	std::thread m_statusworker;
+
+	// m_stopsignal
+	//
+	// Signal (event) object used to stop the service
+	svctl::signal<svctl::signal_type::ManualReset> m_stopsignal;
+};
+
+//-----------------------------------------------------------------------------
+// ::ServiceModule<>
 //
 // Service process module implementation
 //////template<class... _services>
@@ -974,14 +976,6 @@ private:
 	ServiceModule(const ServiceModule&)=delete;
 	ServiceModule& operator=(const ServiceModule&)=delete;
 };
-
-//-----------------------------------------------------------------------------
-// ::Service
-//
-// Global namespace typedef around svctl::service
-
-// TODO: just move svctl::service into the global namespace as "Service"
-typedef svctl::service Service;
 
 //-----------------------------------------------------------------------------
 

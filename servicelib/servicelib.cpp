@@ -301,7 +301,7 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 }
 
 //-----------------------------------------------------------------------------
-// service::SetNonPendingStatus_l (private)
+// service::SetNonPendingStatus (private)
 //
 // Sets a non-pending service status
 //
@@ -310,10 +310,11 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 //	status				- New service status to set
 //	win32exitcode		- Win32 service exit code for ServiceStatus::Stopped (see documentation)
 //	serviceexitcode		- Service specific exit code for ServiceStatus::Stopped (see documentation)
-//
-// CAUTION: m_statuslock should be locked before calling this function
-void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
+
+void service::SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
+	lock critsec(m_statuslock);
+
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
 
@@ -331,17 +332,18 @@ void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 }
 
 //-----------------------------------------------------------------------------
-// service::SetPendingStatus_l (private)
+// service::SetPendingStatus (private)
 //
 // Sets an automatically checkpointed pending service status
 //
 // Arguments:
 //
 //	status				- Pending service status to set
-//
-// CAUTION: m_statuslock should be locked before calling this function
-void service::SetPendingStatus_l(ServiceStatus status)
+
+void service::SetPendingStatus(ServiceStatus status)
 {
+	lock critsec(m_statuslock);
+
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
 
@@ -422,18 +424,18 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 		case ServiceStatus::StopPending:
 		case ServiceStatus::ContinuePending:
 		case ServiceStatus::PausePending:
-			SetPendingStatus_l(status);
+			SetPendingStatus(status);
 			break;
 
 		// Non-pending status codes without an exit status
 		case ServiceStatus::Running:
 		case ServiceStatus::Paused:
-			SetNonPendingStatus_l(status);
+			SetNonPendingStatus(status);
 			break;
 
 		// Non-pending status codes that report exit status
 		case ServiceStatus::Stopped:
-			SetNonPendingStatus_l(status, win32exitcode, serviceexitcode);
+			SetNonPendingStatus(status, win32exitcode, serviceexitcode);
 			break;
 
 		// Invalid status code

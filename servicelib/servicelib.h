@@ -678,16 +678,16 @@ namespace svctl {
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
 
-		// SetNonPendingStatus_l
+		// SetNonPendingStatus
 		//
-		// Sets a non-pending status; m_cs should be locked before calling
-		void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-		void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+		// Sets a non-pending status
+		void SetNonPendingStatus(ServiceStatus status) { SetNonPendingStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+		void SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
 
-		// SetPendingStatus_l
+		// SetPendingStatus
 		//
-		// Sets an auto-checkpoint pending status; m_cs should be locked before calling
-		void SetPendingStatus_l(ServiceStatus status);
+		// Sets an auto-checkpoint pending status
+		void SetPendingStatus(ServiceStatus status);
 
 		// SetStatus
 		//

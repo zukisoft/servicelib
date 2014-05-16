@@ -119,11 +119,26 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 
 	// INTERROGATE, STOP, PAUSE and CONTINUE are all special case handlers
 	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
-	else if(control == ServiceControl::Stop) { m_stopsignal.Set(); return ERROR_SUCCESS; }
-	else if(control == ServiceControl::Pause) { m_pausesignal.Set(); return ERROR_SUCCESS; }
-	else if(control == ServiceControl::Continue) { m_continuesignal.Set(); return ERROR_SUCCESS; }
+	else if(control == ServiceControl::Stop) { 
+		
+		if(!m_statusworker.joinable()) SetPendingStatus(ServiceStatus::StopPending);
+		m_stopsignal.Set(); 
+		return ERROR_SUCCESS; 
+	}
+	else if(control == ServiceControl::Pause) { 
+		
+		if(!m_statusworker.joinable()) SetPendingStatus(ServiceStatus::PausePending);
+		m_pausesignal.Set(); 
+		return ERROR_SUCCESS; 
+	}
+	else if(control == ServiceControl::Continue) { 
+		
+		if(!m_statusworker.joinable()) SetPendingStatus(ServiceStatus::ContinuePending);
+		m_continuesignal.Set(); 
+		return ERROR_SUCCESS; 
+	}
 
-	// Done with checking the current service status; release to not block worker thread
+	// Done with messing about with the current service status; release the critsec
 	critsec.Release();
 
 	// Iterate over all of the implemented control handlers and invoke each of them

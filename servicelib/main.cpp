@@ -40,7 +40,7 @@ public:
 	{
 		static std::unique_ptr<svctl::control_handler> handlers[] = { 
 			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop),
-			//std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Pause, &MyService::OnPause), 
+			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Pause, &MyService::OnPause), 
 			//std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::ParameterChange, &MyService::OnParameterChange), 
 			//std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Continue, &MyService::OnContinue) 
 		};

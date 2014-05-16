@@ -93,27 +93,28 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 
 DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata)
 {
-	// Get the current status of the service (note: This is technically a race
-	// condition with SetStatus(), but should be fine here; use m_statuslock if not)
-	ServiceStatus currentstatus = m_status;
+	lock critsec(m_statuslock);
 
 	// Nothing should be coming in from the service control manager when stopped
-	if(currentstatus == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
+	if(m_status == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
 
+	///// TODO: these aren't quite right based on the model I chose; the way I did
+	// this the CONTINUE event should queue up after PAUSE not be declined
+	//
 	// PAUSE controls are allowed to be redundant by the service control manager
 	// and should not be accepted if the service is not in a RUNNING state
 	if(control == ServiceControl::Pause) {
 
-		if((currentstatus == ServiceStatus::Paused) || (currentstatus == ServiceStatus::PausePending)) return ERROR_SUCCESS;
-		if(currentstatus != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
+		if((m_status == ServiceStatus::Paused) || (m_status == ServiceStatus::PausePending)) return ERROR_SUCCESS;
+		if(m_status != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
 	}
 
 	// CONTINUE controls are allowed to be redundant by the service control manager
 	// and should not be accepted if the service is not in a PAUSED state
 	else if(control == ServiceControl::Continue) {
 
-		if((currentstatus == ServiceStatus::Running) || (currentstatus == ServiceStatus::ContinuePending)) return ERROR_SUCCESS;
-		if(currentstatus != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
+		if((m_status == ServiceStatus::Running) || (m_status == ServiceStatus::ContinuePending)) return ERROR_SUCCESS;
+		if(m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
 	}
 
 	// INTERROGATE, STOP, PAUSE and CONTINUE are all special case handlers
@@ -121,6 +122,9 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	else if(control == ServiceControl::Stop) { m_stopsignal.Set(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Pause) { m_pausesignal.Set(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Continue) { m_continuesignal.Set(); return ERROR_SUCCESS; }
+
+	// Done with checking the current service status; release to not block worker thread
+	critsec.Release();
 
 	// Iterate over all of the implemented control handlers and invoke each of them
 	// in the order in which they appear in the control handler vector<>

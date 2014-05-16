@@ -298,8 +298,13 @@ namespace svctl {
 	public:
 
 		// Constructor / Destructor
-		explicit lock(const critical_section& cs) : m_cs(cs) { m_cs.Enter(); }
-		~lock() { m_cs.Leave(); }
+		explicit lock(const critical_section& cs) : m_cs(cs), m_locked(true) { m_cs.Enter(); }
+		~lock() { if(m_locked) m_cs.Leave(); }
+
+		// Release
+		//
+		// Releases the critical section prior to when the object is unwound
+		void Release(void) { if(m_locked) m_cs.Leave(); m_locked = false; }
 
 	private:
 
@@ -310,6 +315,12 @@ namespace svctl {
 		//
 		// Reference to the critical_section object
 		const critical_section&	m_cs;
+
+		// m_locked
+		//
+		// Flag if the critical section is locked; used to release
+		// the critical section before the objectis unwound
+		bool m_locked;
 	};
 
 	// svctl::resstring

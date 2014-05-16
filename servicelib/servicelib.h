@@ -873,6 +873,11 @@ public:
 	// Dispatches the service table to the service control manager
 	int Dispatch(void);
 
+	// InvokeServiceStub
+	//
+	// Friend function that accesses and invokes an s_stubs service_stub
+	friend void InvokeServiceStub(size_t index, DWORD argc, LPTSTR* argv);
+
 private:
 
 	ServiceTable(const ServiceTable&)=delete;
@@ -884,8 +889,6 @@ private:
 	// will be the number of service_stubs generated
 	static const int MAX_SERVICES = 32;
 
-/// TODO: should be private - figure that out
-public:
 	// s_stubs
 	//
 	// Array of service stub entries

@@ -468,6 +468,7 @@ winexception::winexception(DWORD result) : m_code(result)
 
 };	// namespace svctl
 
+
 //-----------------------------------------------------------------------------
 // ::ServiceModule
 //-----------------------------------------------------------------------------
@@ -475,6 +476,15 @@ winexception::winexception(DWORD result) : m_code(result)
 //-----------------------------------------------------------------------------
 // ::ServiceTable
 //-----------------------------------------------------------------------------
+
+// InvokeServiceStub (ServiceTable friend)
+//
+// Helper funtion used to access private s_stubs variable in ServiceTable
+inline void InvokeServiceStub(size_t index, DWORD argc, LPTSTR* argv)
+{
+	_ASSERTE(index < ServiceTable::MAX_SERVICES);
+	ServiceTable::s_stubs[index].Invoke(argc, argv);
+}
 
 // ServiceTable::s_stubs
 //
@@ -485,39 +495,40 @@ winexception::winexception(DWORD result) : m_code(result)
 std::array<svctl::service_stub, ServiceTable::MAX_SERVICES> ServiceTable::s_stubs = {
 
 	// This is ugly, but the lambda must be declared with the LPSERVICE_MAIN_FUNCTION protoype, which
-	// prevents passing any arguments in with [=] / [&], therefore the indexes must be hard-coded
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[0].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[1].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[2].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[3].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[4].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[5].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[6].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[7].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[8].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[9].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[10].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[11].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[12].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[13].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[14].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[15].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[16].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[17].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[18].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[19].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[20].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[21].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[22].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[23].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[24].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[25].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[26].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[27].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[28].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[29].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[30].Invoke(argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[31].Invoke(argc, argv); })
+	// prevents capturing any arguments, therefore the indexes must be hard-coded for now
+
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(0, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(1, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(2, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(3, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(4, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(5, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(6, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(7, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(8, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(9, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(10, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(11, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(12, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(13, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(14, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(15, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(16, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(17, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(18, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(19, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(20, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(21, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(22, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(23, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(24, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(25, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(26, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(27, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(28, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(29, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(30, argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(31, argc, argv); }),
 };
 
 //-----------------------------------------------------------------------------

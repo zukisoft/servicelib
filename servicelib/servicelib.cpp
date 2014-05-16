@@ -484,26 +484,27 @@ END_NAMESPACE(svctl)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// ServiceModule::Dispatch (static)
+// ServiceTable::Dispatch
 //
-// Dispatches a collection of services to the service control manager
+// Dispatches the collection of services to the service control manager
 //
 // Arguments:
 //
 //	services		- Collection of service_entry objects
 
-int ServiceModule::Dispatch(const ServiceTable& services)
+int ServiceTable::Dispatch(void)
 {
 	//// TODO
-	if(services.size() > svctl::MAX_SERVICES) { throw svctl::winexception(E_FAIL); }
+	if(size() > svctl::MAX_SERVICES) { throw svctl::winexception(E_FAIL); }
 
 	// Determine the service process type to set based on the number of services
-	ServiceProcessType processtype = (services.size() > 1) ? ServiceProcessType::Shared : ServiceProcessType::Unique;
+	ServiceProcessType processtype = (size() > 1) ? ServiceProcessType::Shared : ServiceProcessType::Unique;
 
 	std::vector<SERVICE_TABLE_ENTRY> table;
-	for(size_t index = 0; index < services.size(); index++) {
+	for(size_t index = 0; index < size(); index++) {
 
-		const svctl::service_table_entry& entry = services[index];
+		// TODO: clean up
+		const svctl::service_table_entry& entry = (*this)[index];
 		svctl::g_stubs[index].Set(entry.Name, processtype, entry.ServiceMain);
 		table.push_back(svctl::g_stubs[index]);
 	}

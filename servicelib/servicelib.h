@@ -624,6 +624,8 @@ namespace svctl {
 	__declspec(selectany)
 	service_stub g_stubs[MAX_SERVICES] = {		// 32
 
+		// TODO: move this to service table, use a loop and static initializer lambda in cpp file
+
 		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[0].Invoke(argc, argv); }),
 		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[1].Invoke(argc, argv); }),
 		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[2].Invoke(argc, argv); }),
@@ -793,13 +795,6 @@ namespace svctl {
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// ::ServiceTable
-//
-// Typedef around a vector of svctl::service_table_entry objects
-
-typedef std::vector<svctl::service_table_entry> ServiceTable;
-
-//-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
 //
 // Specialization of the svctl::control_handler class that allows the derived
@@ -901,6 +896,30 @@ struct ServiceTableEntry : public svctl::service_table_entry
 };
 
 //-----------------------------------------------------------------------------
+// ::ServiceTable
+//
+// TODO: words
+
+// TODO: make vector inheritance private and add member functions instead
+class ServiceTable : public std::vector<svctl::service_table_entry>
+{
+public:
+
+	ServiceTable()=default;
+	ServiceTable(const std::initializer_list<svctl::service_table_entry> init) : vector(init) {}
+
+	// Dispatch
+	//
+	// Dispatches the service table to the service control manager
+	int Dispatch(void);
+
+private:
+
+	ServiceTable(const ServiceTable&)=delete;
+	ServiceTable& operator=(const ServiceTable&)=delete;
+};
+
+//-----------------------------------------------------------------------------
 // ::Service<>
 //
 // Template version of svctl::service
@@ -945,20 +964,6 @@ public:
 	// Destructor
 	//
 	virtual ~ServiceModule()=default;
-
-	template<class _service>
-	static int Dispatch(LPCTSTR name)
-	{
-		return Dispatch( { ServiceTableEntry<_service>(name) } );
-	}
-
-	static int Dispatch(const svctl::service_table_entry& service)
-	{
-		// Create a vector<> containing just the single service entry
-		return Dispatch(std::vector<svctl::service_table_entry> { service });
-	}
-
-	static int Dispatch(const ServiceTable& services);
 
 	// main
 	//

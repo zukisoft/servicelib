@@ -69,6 +69,6 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 #endif	// _DEBUG
 
 	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MyService>(L"MyService2") };
-	ServiceModule::Dispatch(services);
+	services.Dispatch();
 }
 

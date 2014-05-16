@@ -88,40 +88,11 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 }
 
 //-----------------------------------------------------------------------------
-// svctl::winexception
+// svctl::service
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// winexception Constructor
-//
-// Arguments:
-//
-//	result		- Win32 error code
-
-winexception::winexception(DWORD result) : m_code(result)
-{
-	char_t*				formatted;				// Formatted message
-
-	// Invoke FormatMessageA to convert the system error code into an ANSI string; use a lame
-	// generic 'unknown' string for any codes that cannot be looked up successfully
-	if(FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, nullptr, result,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<char_t*>(&formatted), 0, nullptr)) {
-		
-		m_what = formatted;						// Store the formatted message string
-		LocalFree(formatted);					// Release FormatMessage() allocated buffer
-	}
-
-	else m_what = "Unknown Windows status code " + std::to_string(result);
-}
-
-END_NAMESPACE(svctl)
-
-//-----------------------------------------------------------------------------
-// ::Service
-//-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
-// Service::ControlHandler (private)
+// service::ControlHandler (private)
 //
 // Handles a service control request from the service control manager
 //
@@ -131,7 +102,7 @@ END_NAMESPACE(svctl)
 //	eventtype		- Control-specific event type
 //	eventdata		- Control-specific event data
 
-DWORD Service::ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata)
+DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata)
 {
 	// Get the current status of the service (note: This is technically a race
 	// condition with SetStatus(), but should be fine here; use m_statuslock if not)
@@ -183,7 +154,7 @@ DWORD Service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 }
 
 //-----------------------------------------------------------------------------
-// Service::getAcceptedControls (private)
+// service::getAcceptedControls (private)
 //
 // Determines what SERVICE_ACCEPT_XXXX codes the service will respond to based
 // on what control handlers have been registered
@@ -192,7 +163,7 @@ DWORD Service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 //
 //	NONE
 
-DWORD Service::getAcceptedControls(void) const
+DWORD service::getAcceptedControls(void) const
 {
 	DWORD accept = 0;
 
@@ -222,20 +193,20 @@ DWORD Service::getAcceptedControls(void) const
 }
 
 //-----------------------------------------------------------------------------
-// Service::getHandlers (protected, virtual)
+// service::getHandlers (protected, virtual)
 //
 // Gets the collection of service-specific control handlers
 
-const svctl::control_handler_table& Service::getHandlers(void) const
+const control_handler_table& service::getHandlers(void) const
 {
 	// The default implementation has no handlers; this results in a service that
 	// can be started but otherwise will not respond to any controls, including STOP
-	static svctl::control_handler_table nohandlers;
+	static control_handler_table nohandlers;
 	return nohandlers;
 }
 
 //-----------------------------------------------------------------------------
-// Service::ServiceMain (private)
+// service::Run (protected)
 //
 // Service instance entry point
 //
@@ -246,24 +217,24 @@ const svctl::control_handler_table& Service::getHandlers(void) const
 //	argc			- Number of command line arguments
 //	argv			- Array of command line argument strings
 
-void Service::ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv)
+void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv)
 {
 	_ASSERTE(name);										// Should never be a NULL pointer on entry
 
 	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
-		return reinterpret_cast<Service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
+		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
 	// Register a service control handler for this service instance
 	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(name, handler, this);
-	if(statushandle == 0) throw svctl::winexception();
+	if(statushandle == 0) throw winexception();
 
 	// Define a status reporting function that uses the handle and process types defined above
 	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
 
 		_ASSERTE(statushandle != 0);
 		status.dwServiceType = static_cast<DWORD>(processtype);
-		if(!SetServiceStatus(statushandle, &status)) throw svctl::winexception();
+		if(!SetServiceStatus(statushandle, &status)) throw winexception();
 	};
 
 	try {
@@ -316,12 +287,12 @@ void Service::ServiceMain(const svctl::tchar_t* name, ServiceProcessType process
 			}
 
 			// WAIT_FAILED: Error
-			else if(wait == WAIT_FAILED) throw svctl::winexception();
-			else throw svctl::winexception(E_FAIL);
+			else if(wait == WAIT_FAILED) throw winexception();
+			else throw winexception(E_FAIL);
 		}
 	}
 
-	catch(svctl::winexception& ex) { 
+	catch(winexception& ex) { 
 		
 		// Set the service to STOPPED on an unhandled winexception
 		try { SetStatus(ServiceStatus::Stopped, ex.code()); }
@@ -330,14 +301,14 @@ void Service::ServiceMain(const svctl::tchar_t* name, ServiceProcessType process
 
 	catch(...) { 
 		
-		// Set the servuce to STOPPED on an unhandled exception
+		// Set the service to STOPPED on an unhandled exception
 		try { SetStatus(ServiceStatus::Stopped, ERROR_SERVICE_SPECIFIC_ERROR, static_cast<DWORD>(E_FAIL)); }
 		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
 	}
 }
 
 //-----------------------------------------------------------------------------
-// Service::SetNonPendingStatus_l (private)
+// service::SetNonPendingStatus_l (private)
 //
 // Sets a non-pending service status
 //
@@ -348,7 +319,7 @@ void Service::ServiceMain(const svctl::tchar_t* name, ServiceProcessType process
 //	serviceexitcode		- Service specific exit code for ServiceStatus::Stopped (see documentation)
 //
 // CAUTION: m_statuslock should be locked before calling this function
-void Service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
+void service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
@@ -367,7 +338,7 @@ void Service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 }
 
 //-----------------------------------------------------------------------------
-// Service::SetPendingStatus_l (private)
+// service::SetPendingStatus_l (private)
 //
 // Sets an automatically checkpointed pending service status
 //
@@ -376,7 +347,7 @@ void Service::SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode
 //	status				- Pending service status to set
 //
 // CAUTION: m_statuslock should be locked before calling this function
-void Service::SetPendingStatus_l(ServiceStatus status)
+void service::SetPendingStatus_l(ServiceStatus status)
 {
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
@@ -418,7 +389,7 @@ void Service::SetPendingStatus_l(ServiceStatus status)
 }
 
 //-----------------------------------------------------------------------------
-// Service::SetStatus (private)
+// service::SetStatus (private)
 //
 // Sets a new service status; pending vs. non-pending is handled automatically
 //
@@ -428,9 +399,9 @@ void Service::SetPendingStatus_l(ServiceStatus status)
 //	win32exitcode	- Win32 specific exit code for ServiceStatus::Stopped (see documentation)
 //	serviceexitcode	- Service-specific exit code for ServiceStatus::Stopped (see documentation)
 
-void Service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
+void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
-	svctl::lock critsec(m_statuslock);				// Automatic CRITICAL_SECTION wrapper
+	lock critsec(m_statuslock);				// Automatic CRITICAL_SECTION wrapper
 
 	// Check for a duplicate status; pending states are managed automatically
 	if(status == m_status) return;
@@ -440,7 +411,7 @@ void Service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 
 		// Cancel the pending state checkpoint thread by signaling the event object
 		if(SignalObjectAndWait(m_statussignal, m_statusworker.native_handle(), INFINITE, FALSE) == WAIT_FAILED) 
-			throw svctl::winexception();
+			throw winexception();
 
 		m_statusworker.join();
 		m_statussignal.Reset();
@@ -473,11 +444,40 @@ void Service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 			break;
 
 		// Invalid status code
-		default: throw svctl::winexception(E_INVALIDARG);
+		default: throw winexception(E_INVALIDARG);
 	}
 	
 	m_status = status;					// Service status has been changed
 }
+
+//-----------------------------------------------------------------------------
+// svctl::winexception
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// winexception Constructor
+//
+// Arguments:
+//
+//	result		- Win32 error code
+
+winexception::winexception(DWORD result) : m_code(result)
+{
+	char_t*				formatted;				// Formatted message
+
+	// Invoke FormatMessageA to convert the system error code into an ANSI string; use a lame
+	// generic 'unknown' string for any codes that cannot be looked up successfully
+	if(FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, nullptr, result,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<char_t*>(&formatted), 0, nullptr)) {
+		
+		m_what = formatted;						// Store the formatted message string
+		LocalFree(formatted);					// Release FormatMessage() allocated buffer
+	}
+
+	else m_what = "Unknown Windows status code " + std::to_string(result);
+}
+
+END_NAMESPACE(svctl)
 
 //-----------------------------------------------------------------------------
 // ::ServiceModule
@@ -503,9 +503,9 @@ int ServiceModule::Dispatch(const ServiceTable& services)
 	std::vector<SERVICE_TABLE_ENTRY> table;
 	for(size_t index = 0; index < services.size(); index++) {
 
-		const svctl::service_entry& entry = services[index];
-		svctl::g_servicetable[index].Set(entry.Name, processtype, entry.ServiceMain);
-		table.push_back(svctl::g_servicetable[index]);
+		const svctl::service_table_entry& entry = services[index];
+		svctl::g_stubs[index].Set(entry.Name, processtype, entry.ServiceMain);
+		table.push_back(svctl::g_stubs[index]);
 	}
 
 	table.push_back( { nullptr, nullptr } );

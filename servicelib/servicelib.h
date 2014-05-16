@@ -180,8 +180,8 @@ namespace svctl {
 	// svctl::MAX_SERVICES
 	//
 	// Defines the maximum number of services that can be hosted in the module;
-	// see service_table_entry below -- a global table needed to be generated
-	// in order to allow for dynamic service names and service process types
+	// see service_stub below -- a global table needed to be generated in order
+	// to allow for dynamic service names and service process types
 	const int MAX_SERVICES = 32;
 
 	// svctl::char_t
@@ -513,18 +513,18 @@ namespace svctl {
 	// as a vector of unique pointers to control_handler instances ...
 	typedef std::vector<std::unique_ptr<svctl::control_handler>> control_handler_table;
 
-	// svctl::service_entry
+	// svctl::service_table_entry
 	//
-	// Defines a name and entry point for an svctl::service derived class
-	class service_entry
+	// Defines a name and entry point for Service-derived class
+	class service_table_entry
 	{
 	public:
 
 		// Copy Constructor
-		service_entry(const service_entry&)=default;
+		service_table_entry(const service_table_entry&)=default;
 
 		// Assignment Operator
-		service_entry& operator=(const service_entry&)=default;
+		service_table_entry& operator=(const service_table_entry&)=default;
 
 		// Name
 		//
@@ -541,7 +541,7 @@ namespace svctl {
 	protected:
 
 		// Instance constructor
-		service_entry(const tchar_t* name, const service_main_func& servicemain) :
+		service_table_entry(const tchar_t* name, const service_main_func& servicemain) :
 			m_name(name), m_servicemain(servicemain) {}
 
 	private:
@@ -557,32 +557,21 @@ namespace svctl {
 		service_main_func m_servicemain;
 	};
 
-	// svctl::service_table_entry
+	// svctl::service_stub
 	//
 	// Used to define a global table of service entries that each possess a unique static
-	// ServiceMain() function that can invoke a derived service's ServiceMain with dynamically
-	// defined name and process type values
-	class service_table_entry
+	// LPSERVICE_MAIN_FUNCTION that can invoke a derived service's ServiceMain<> with 
+	// dynamically defined name and process type parameters
+	class service_stub
 	{
 	public:
 
 		// Instance Constructor
-		service_table_entry(LPSERVICE_MAIN_FUNCTION stubmain) : m_stubmain(stubmain) {}
+		service_stub(LPSERVICE_MAIN_FUNCTION stubmain) : m_stubmain(stubmain) {}
 
 		// operator SERVICE_TABLE_ENTRY()
-		//
-		// Converts this instance into a SERVICE_TABLE_ENTRY structure
 		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_stubmain }; }
 
-		
-		////
-		void Set(const tchar_t* name, ServiceProcessType processtype, const service_main_func& servicemain)
-		{
-			m_name = name;
-			m_processtype = processtype;
-			m_servicemain = servicemain;
-		}
-		
 		// Invoke
 		//
 		// Invokes the actual ServiceMain() using the arguments set for this entry
@@ -596,6 +585,16 @@ namespace svctl {
 			m_servicemain(m_name, m_processtype, static_cast<int>(argc), argv);
 		}
 
+		// Set
+		//
+		// Alters the name, process type and entry point portions of the stub entry
+		void Set(const tchar_t* name, ServiceProcessType processtype, const service_main_func& servicemain)
+		{
+			m_name = name;
+			m_processtype = processtype;
+			m_servicemain = servicemain;
+		}
+		
 	private:
 
 		// m_name
@@ -611,7 +610,7 @@ namespace svctl {
 		// m_servicemain
 		//
 		// Points to the service::ServiceMain<T> for this service entry
-		std::function<void(const tchar_t*, ServiceProcessType, int, tchar_t**)> m_servicemain;
+		service_main_func m_servicemain;
 
 		// m_stubmain
 		//
@@ -619,44 +618,170 @@ namespace svctl {
 		LPSERVICE_MAIN_FUNCTION m_stubmain;
 	};
 
-	// g_servicetable
+	// g_stubs
 	//
-	// Defines each of the global service_table_entry objects with unique ServiceMain() functions
+	// Defines each of the global service_stub objects with unique ServiceMain() functions
 	__declspec(selectany)
-	service_table_entry g_servicetable[MAX_SERVICES] = {		// 32
+	service_stub g_stubs[MAX_SERVICES] = {		// 32
 
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[0].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[1].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[2].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[3].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[4].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[5].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[6].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[7].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[8].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[9].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[10].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[11].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[12].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[13].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[14].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[15].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[16].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[17].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[18].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[19].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[20].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[21].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[22].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[23].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[24].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[25].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[26].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[27].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[28].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[29].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[30].Invoke(argc, argv); }),
-		service_table_entry([](DWORD argc, LPTSTR* argv) -> void { g_servicetable[31].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[0].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[1].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[2].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[3].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[4].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[5].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[6].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[7].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[8].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[9].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[10].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[11].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[12].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[13].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[14].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[15].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[16].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[17].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[18].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[19].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[20].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[21].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[22].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[23].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[24].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[25].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[26].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[27].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[28].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[29].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[30].Invoke(argc, argv); }),
+		service_stub([](DWORD argc, LPTSTR* argv) -> void { g_stubs[31].Invoke(argc, argv); }),
+	};
+
+	// svctl::service
+	//
+	// Primary service base class
+	class service : virtual private svctl::auxiliary_state_machine
+	{
+	public:
+
+		// Destructor
+		virtual ~service()=default;
+
+	protected:
+		
+		// Instance Constructor
+		service()=default;
+
+		// OnStart
+		//
+		// Invoked when the service is started; must be implemented in the service
+		virtual void OnStart(int argc, LPTSTR* argv) = 0;
+
+		// Run
+		//
+		// Service entry point
+		void Run(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv);
+
+		// Handlers
+		//
+		// Gets the collection of service-specific control handlers
+		__declspec(property(get=getHandlers)) const control_handler_table& Handlers;
+		virtual const control_handler_table& getHandlers(void) const;
+
+	private:
+
+		service(const service&)=delete;
+		service& operator=(const service&)=delete;
+
+		// PENDING_CHECKPOINT_INTERVAL
+		//
+		// Interval at which the pending status thread will report progress
+		const uint32_t PENDING_CHECKPOINT_INTERVAL = 1000;
+
+		// PENDING_WAIT_HINT
+		//
+		// Standard wait hint used when a pending status has been set
+		const uint32_t PENDING_WAIT_HINT = 2000;
+
+		// STARTUP_WAIT_HINT
+		//
+		// Wait hint used during the initial service START_PENDING status
+		const uint32_t STARTUP_WAIT_HINT = 5000;
+
+		// ControlHandler
+		//
+		// Service control request handler method
+		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
+
+		// SetNonPendingStatus_l
+		//
+		// Sets a non-pending status; m_cs should be locked before calling
+		void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+		void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+		// SetPendingStatus_l
+		//
+		// Sets an auto-checkpoint pending status; m_cs should be locked before calling
+		void SetPendingStatus_l(ServiceStatus status);
+
+		// SetStatus
+		//
+		// Sets a new service status
+		void SetStatus(ServiceStatus status) { SetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+		void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
+		void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+		// AcceptedControls
+		//
+		// Gets what control codes the service will accept
+		__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
+		DWORD getAcceptedControls(void) const;
+
+		// m_continuesignal
+		//
+		// Signal (event) object used to continue the service when paused
+		signal<signal_type::ManualReset> m_continuesignal;
+
+		// m_pausesignal
+		//
+		// Signal (event) object used to pause the service
+		signal<signal_type::ManualReset> m_pausesignal;
+
+		// m_status
+		//
+		// Current service status
+		ServiceStatus m_status = ServiceStatus::Stopped;
+
+		// m_statusexception
+		//
+		// Holds any exception thrown by a status worker thread
+		std::exception_ptr m_statusexception;
+
+		// m_statusfunc
+		//
+		// Function pointer used to report an updated service status
+		report_status_func m_statusfunc;
+ 
+		// m_statuslock;
+		//
+		// CRITICAL_SECTION synchronization object for status updates
+		critical_section m_statuslock;
+
+		// m_statussignal
+		//
+		// Signal (event) object used to stop a pending status thread
+		signal<signal_type::ManualReset> m_statussignal;
+
+		// m_statusworker
+		//
+		// Pending status worker thread
+		std::thread m_statusworker;
+
+		// m_stopsignal
+		//
+		// Signal (event) object used to stop the service
+		signal<signal_type::ManualReset> m_stopsignal;
 	};
 
 } // namespace svctl
@@ -670,9 +795,9 @@ namespace svctl {
 //-----------------------------------------------------------------------------
 // ::ServiceTable
 //
-// Typedef around a vector of svctl::service_entry objects
+// Typedef around a vector of svctl::service_table_entry objects
 
-typedef std::vector<svctl::service_entry> ServiceTable;
+typedef std::vector<svctl::service_table_entry> ServiceTable;
 
 //-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
@@ -763,172 +888,58 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// ::ServiceEntry<>
+// ::ServiceTableEntry<>
 //
-// Defines a single service to be operated on by ServiceModule
-
-// TODO: Rename me ServiceTableEntry, rename service_table_entry to something else
+// Template version of svctl::service_table_entry
 
 template <class _derived>
-struct ServiceEntry : public svctl::service_entry
+struct ServiceTableEntry : public svctl::service_table_entry
 {
 	// Instance constructor
-	explicit ServiceEntry(const svctl::tchar_t* name) : service_entry(name, &Service::ServiceMain<_derived>) {}
+	explicit ServiceTableEntry(const svctl::tchar_t* name) : 
+		service_table_entry(name, &_derived::ServiceMain) {}
 };
 
 //-----------------------------------------------------------------------------
-// ::Service
+// ::Service<>
 //
-// Master service base class
+// Template version of svctl::service
 
-class Service : virtual private svctl::auxiliary_state_machine
+template <class _derived>
+class Service : public svctl::service
 {
+friend struct ServiceTableEntry<_derived>;
 public:
 
-	// Destructor
-	virtual ~Service()=default;
-
-	// ServiceMain<>
-	//
-	// Service entry point
-	template<class _derived>
-	static void ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv)
-	{
-		//
-		// TODO: make private?
-		//
-		std::unique_ptr<Service> instance = std::make_unique<_derived>();
-		if(instance) instance->ServiceMain(name, processtype, argc, argv);
-	}
-
-protected:
-		
-	// Instance Constructor
+	// Constructor / Destructor
 	Service()=default;
-
-	// OnStart
-	//
-	// Invoked when the service is started; must be implemented in the service
-	virtual void OnStart(int argc, LPTSTR* argv) = 0;
-
-	// Handlers
-	//
-	// Gets the collection of service-specific control handlers
-	__declspec(property(get=getHandlers)) const svctl::control_handler_table& Handlers;
-	virtual const svctl::control_handler_table& getHandlers(void) const;
+	virtual ~Service()=default;
 
 private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
 
-	// PENDING_CHECKPOINT_INTERVAL
-	//
-	// Interval at which the pending status thread will report progress
-	const uint32_t PENDING_CHECKPOINT_INTERVAL = 1000;
-
-	// PENDING_WAIT_HINT
-	//
-	// Standard wait hint used when a pending status has been set
-	const uint32_t PENDING_WAIT_HINT = 2000;
-
-	// STARTUP_WAIT_HINT
-	//
-	// Wait hint used during the initial service START_PENDING status
-	const uint32_t STARTUP_WAIT_HINT = 5000;
-
-	// ControlHandler
-	//
-	// Service control request handler method
-	DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
-
 	// ServiceMain
 	//
 	// Service entry point
-	void ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv);
-
-	// SetNonPendingStatus_l
-	//
-	// Sets a non-pending status; m_cs should be locked before calling
-	void SetNonPendingStatus_l(ServiceStatus status) { SetNonPendingStatus_l(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-	void SetNonPendingStatus_l(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
-
-	// SetPendingStatus_l
-	//
-	// Sets an auto-checkpoint pending status; m_cs should be locked before calling
-	void SetPendingStatus_l(ServiceStatus status);
-
-	// SetStatus
-	//
-	// Sets a new service status
-	void SetStatus(ServiceStatus status) { SetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
-	void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
-	void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
-
-	// AcceptedControls
-	//
-	// Gets what control codes the service will accept
-	__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
-	DWORD getAcceptedControls(void) const;
-
-	// m_continuesignal
-	//
-	// Signal (event) object used to continue the service when paused
-	svctl::signal<svctl::signal_type::ManualReset> m_continuesignal;
-
-	// m_pausesignal
-	//
-	// Signal (event) object used to pause the service
-	svctl::signal<svctl::signal_type::ManualReset> m_pausesignal;
-
-	// m_status
-	//
-	// Current service status
-	ServiceStatus m_status = ServiceStatus::Stopped;
-
-	// m_statusexception
-	//
-	// Holds any exception thrown by a status worker thread
-	std::exception_ptr m_statusexception;
-
-	// m_statusfunc
-	//
-	// Function pointer used to report an updated service status
-	svctl::report_status_func m_statusfunc;
- 
-	// m_statuslock;
-	//
-	// CRITICAL_SECTION synchronization object for status updates
-	svctl::critical_section m_statuslock;
-
-	// m_statussignal
-	//
-	// Signal (event) object used to stop a pending status thread
-	svctl::signal<svctl::signal_type::ManualReset> m_statussignal;
-
-	// m_statusworker
-	//
-	// Pending status worker thread
-	std::thread m_statusworker;
-
-	// m_stopsignal
-	//
-	// Signal (event) object used to stop the service
-	svctl::signal<svctl::signal_type::ManualReset> m_stopsignal;
+	static void ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv)
+	{
+		std::unique_ptr<_derived> instance = std::make_unique<_derived>();
+		if(instance) instance->Run(name, processtype, argc, argv);
+	}
 };
 
 //-----------------------------------------------------------------------------
 // ::ServiceModule<>
 //
 // Service process module implementation
-//////template<class... _services>
-class ServiceModule ////: public svctl::service_module
+
+class ServiceModule
 {
 public:
 
 	// Instance Constructor
-	//
-	/////explicit ServiceModule() : service_module({ (_services::s_tableentry)... }) {}
 	ServiceModule()=default;
 
 	// Destructor
@@ -938,13 +949,13 @@ public:
 	template<class _service>
 	static int Dispatch(LPCTSTR name)
 	{
-		return Dispatch( { ServiceEntry<_service>(name) } );
+		return Dispatch( { ServiceTableEntry<_service>(name) } );
 	}
 
-	static int Dispatch(const svctl::service_entry& service)
+	static int Dispatch(const svctl::service_table_entry& service)
 	{
 		// Create a vector<> containing just the single service entry
-		return Dispatch(std::vector<svctl::service_entry> { service });
+		return Dispatch(std::vector<svctl::service_table_entry> { service });
 	}
 
 	static int Dispatch(const ServiceTable& services);

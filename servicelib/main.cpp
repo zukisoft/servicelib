@@ -9,7 +9,7 @@
 
 ////////////////////////////////////////////////////
 
-class MyService : public Service
+class MyService : public Service<MyService>
 {
 public:
 
@@ -68,7 +68,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	ServiceTable services = { ServiceEntry<MyService>(L"MyService"), ServiceEntry<MyService>(L"MyService2") };
+	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MyService>(L"MyService2") };
 	ServiceModule::Dispatch(services);
 }
 

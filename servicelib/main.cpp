@@ -48,8 +48,6 @@ public:
 		return v;
 	}
 
-	svctl::tchar_t* TestGetName(void) { return L"MyService"; }
-
 private:
 
 	MyService(const MyService&)=delete;
@@ -68,6 +66,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
+	// Manual dispatching with dynamic names
 	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MyService>(L"MyService2") };
 	services.Dispatch();
 }

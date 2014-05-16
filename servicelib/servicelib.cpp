@@ -25,18 +25,7 @@
 
 #pragma warning(push, 4)
 
-// BEGIN_NAMESPACE / END_NAMESPACE
-//
-#pragma push_macro("BEGIN_NAMESPACE")
-#pragma push_macro("END_NAMESPACE")
-#undef BEGIN_NAMESPACE
-#undef END_NAMESPACE
-#define BEGIN_NAMESPACE(ns)		namespace ns {
-#define END_NAMESPACE(ns)		};
-
-//-----------------------------------------------------------------------------
-
-BEGIN_NAMESPACE(svctl)
+namespace svctl {
 
 //-----------------------------------------------------------------------------
 // svctl::auxiliary_state_machine
@@ -477,11 +466,59 @@ winexception::winexception(DWORD result) : m_code(result)
 	else m_what = "Unknown Windows status code " + std::to_string(result);
 }
 
-END_NAMESPACE(svctl)
+};	// namespace svctl
 
 //-----------------------------------------------------------------------------
 // ::ServiceModule
 //-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// ::ServiceTable
+//-----------------------------------------------------------------------------
+
+// ServiceTable::s_stubs
+//
+// In order to support dynamically named services, a collection of predefined 
+// ServiceMain entry points still need to exist.  Each service_stub contains such
+// a unique entry point that calls back into itself to get the name, process type
+// and service class entry point set by the Dispatch() method
+std::array<svctl::service_stub, ServiceTable::MAX_SERVICES> ServiceTable::s_stubs = {
+
+	// This is ugly, but the lambda must be declared with the LPSERVICE_MAIN_FUNCTION protoype, which
+	// prevents passing any arguments in with [=] / [&], therefore the indexes must be hard-coded
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[0].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[1].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[2].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[3].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[4].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[5].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[6].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[7].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[8].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[9].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[10].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[11].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[12].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[13].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[14].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[15].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[16].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[17].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[18].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[19].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[20].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[21].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[22].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[23].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[24].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[25].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[26].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[27].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[28].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[29].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[30].Invoke(argc, argv); }),
+	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { ServiceTable::s_stubs[31].Invoke(argc, argv); })
+};
 
 //-----------------------------------------------------------------------------
 // ServiceTable::Dispatch
@@ -494,22 +531,23 @@ END_NAMESPACE(svctl)
 
 int ServiceTable::Dispatch(void)
 {
-	//// TODO
-	if(size() > svctl::MAX_SERVICES) { throw svctl::winexception(E_FAIL); }
+	// Can only have as many services as there are service_stubs defined
+	if(vector::size() > s_stubs.size()) return E_BOUNDS;
 
 	// Determine the service process type to set based on the number of services
-	ServiceProcessType processtype = (size() > 1) ? ServiceProcessType::Shared : ServiceProcessType::Unique;
+	ServiceProcessType processtype = (vector::size() > 1) ? ServiceProcessType::Shared : ServiceProcessType::Unique;
 
+	// Convert the collection into SERVICE_TABLE_ENTRY structures for the service control manager
 	std::vector<SERVICE_TABLE_ENTRY> table;
-	for(size_t index = 0; index < size(); index++) {
+	for(size_t index = 0; index < vector::size(); index++) {
 
-		// TODO: clean up
-		const svctl::service_table_entry& entry = (*this)[index];
-		svctl::g_stubs[index].Set(entry.Name, processtype, entry.ServiceMain);
-		table.push_back(svctl::g_stubs[index]);
+		// The static stub requires the correct name, process type and real entry point set
+		const svctl::service_table_entry& entry = vector::at(index);
+		s_stubs[index].Set(entry.Name, processtype, entry.ServiceMain);
+
+		table.push_back(s_stubs[index]);				// Insert into the collection
 	}
-
-	table.push_back( { nullptr, nullptr } );
+	table.push_back( { nullptr, nullptr } );			// Table needs to end with NULLs
 
 	// Attempt to start the service control dispatcher
 	if(!StartServiceCtrlDispatcher(table.data())) return static_cast<int>(GetLastError());
@@ -519,6 +557,3 @@ int ServiceTable::Dispatch(void)
 
 //-----------------------------------------------------------------------------
 
-#pragma pop_macro("END_NAMESPACE")
-#pragma pop_macro("BEGIN_NAMESPACE")
-#pragma warning(pop)

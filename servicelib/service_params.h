@@ -8,6 +8,10 @@
 
 #pragma warning(push, 4)
 
+//////////////////////////////////////////////////////////////////////
+/////////////// THIS WILL NOT WORK WITH DYNAMIC SERVICE NAMES 
+/////////////////////////////////////////////////////////////////////
+
 namespace svctl {
 
 	// svctl::parameter
@@ -29,6 +33,9 @@ namespace svctl {
 		parameter& operator=(const parameter&)=delete;
 	};
 
+	// svctl::parameter_map
+	//
+	// Collection of service-specific parameter objects
 	typedef std::map<tstring, parameter&> parameter_map;
 
 	// svctl::service_parameters
@@ -114,6 +121,14 @@ protected:
 
 		_type m_value;
 	};
+
+//public:
+//
+//	template <typename _type>
+//	static Parameter<_type> CreateParameter(LPCTSTR name)
+//	{
+//		return std::move(Parameter<_type>(name));
+//	}
 
 private:
 

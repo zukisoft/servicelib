@@ -399,87 +399,87 @@ namespace svctl {
 	// Service Classes
 	//
 
-	//// svctl::auxiliary_state
-	////
-	//// Interface used by auxiliary classes that are tied into the service via
-	//// inheritance of the auxiliary_state_machine
-	//struct __declspec(novtable) auxiliary_state
-	//{
-	//	// OnContinue
-	//	//
-	//	// Invoked when the derived service is continued
-	//	virtual void OnContinue(void) {}   
-	//	
-	//	// TODO: do I want these to stay defaulted or change this entirely.
-	//	// Can probably just do OnStart() and then OnControl() or something
+	// svctl::auxiliary_state
+	//
+	// Interface used by auxiliary classes that are tied into the service via
+	// inheritance of the auxiliary_state_machine
+	struct __declspec(novtable) auxiliary_state
+	{
+		// OnContinue
+		//
+		// Invoked when the derived service is continued
+		virtual void OnContinue(void) {}   
+		
+		// TODO: do I want these to stay defaulted or change this entirely.
+		// Can probably just do OnStart() and then OnControl() or something
 
-	//	// OnPause
-	//	//
-	//	// Invoked when the derived service is paused
-	//	virtual void OnPause(void) {}
+		// OnPause
+		//
+		// Invoked when the derived service is paused
+		virtual void OnPause(void) {}
 
-	//	// OnStart
-	//	//
-	//	// Invoked when the derived service is started
-	//	virtual void OnStart(const tchar_t*, ServiceProcessType, int, tchar_t**) {}
+		// OnStart
+		//
+		// Invoked when the derived service is started
+		virtual void OnStart(const tchar_t*, ServiceProcessType, int, tchar_t**) {}
 
-	//	// OnStop
-	//	//
-	//	// Invoked when the derived service is stopped
-	//	virtual void OnStop(void) {}
-	//};
+		// OnStop
+		//
+		// Invoked when the derived service is stopped
+		virtual void OnStop(void) {}
+	};
 
-	//// svctl::auxiliary_state_machine
-	////
-	//// State machine that ties all of the auxiliary classes in a service inheritance
-	//// chain together dynamically
-	//class auxiliary_state_machine
-	//{
-	//public:
+	// svctl::auxiliary_state_machine
+	//
+	// State machine that ties all of the auxiliary classes in a service inheritance
+	// chain together dynamically
+	class auxiliary_state_machine
+	{
+	public:
 
-	//	// Instance Constructor
-	//	//
-	//	auxiliary_state_machine()=default;
+		// Instance Constructor
+		//
+		auxiliary_state_machine()=default;
 
-	//	// OnContinue
-	//	//
-	//	// Invokes all of the registered OnContinue() methods
-	//	void OnContinue(void) { for(const auto& iterator : m_instances) iterator->OnContinue(); }
+		// OnContinue
+		//
+		// Invokes all of the registered OnContinue() methods
+		void OnContinue(void) { for(const auto& iterator : m_instances) iterator->OnContinue(); }
 
-	//	// OnPause
-	//	//
-	//	// Invokes all of the registered OnPause() methods
-	//	void OnPause(void) { for(const auto& iterator : m_instances) iterator->OnPause(); }
+		// OnPause
+		//
+		// Invokes all of the registered OnPause() methods
+		void OnPause(void) { for(const auto& iterator : m_instances) iterator->OnPause(); }
 
-	//	// OnStart
-	//	//
-	//	// Invokes all of the registered OnStart() methods
-	//	void OnStart(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv) { 
-	//		for(const auto& iterator : m_instances) iterator->OnStart(name, processtype, argc, argv); 
-	//	}
+		// OnStart
+		//
+		// Invokes all of the registered OnStart() methods
+		void OnStart(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv) { 
+			for(const auto& iterator : m_instances) iterator->OnStart(name, processtype, argc, argv); 
+		}
 
-	//	// OnStop
-	//	//
-	//	// Invokes all of the registered OnStop() methods
-	//	void OnStop(void) { for(const auto& iterator : m_instances) iterator->OnStop(); }
+		// OnStop
+		//
+		// Invokes all of the registered OnStop() methods
+		void OnStop(void) { for(const auto& iterator : m_instances) iterator->OnStop(); }
 
-	//protected:
+	protected:
 
-	//	// RegisterAuxiliaryState
-	//	//
-	//	// Registers a derived class' auxiliary_state interface
-	//	void RegisterAuxiliaryState(struct auxiliary_state* instance);
+		// RegisterAuxiliaryState
+		//
+		// Registers a derived class' auxiliary_state interface
+		void RegisterAuxiliaryState(struct auxiliary_state* instance);
 
-	//private:
+	private:
 
-	//	auxiliary_state_machine(const auxiliary_state_machine&)=delete;
-	//	auxiliary_state_machine& operator=(const auxiliary_state_machine&)=delete;
+		auxiliary_state_machine(const auxiliary_state_machine&)=delete;
+		auxiliary_state_machine& operator=(const auxiliary_state_machine&)=delete;
 
-	//	// m_instances
-	//	//
-	//	// Collection of registered auxiliary classes
-	//	std::vector<auxiliary_state*> m_instances;
-	//};
+		// m_instances
+		//
+		// Collection of registered auxiliary classes
+		std::vector<auxiliary_state*> m_instances;
+	};
 
 	// svctl::control_handler
 	//
@@ -632,7 +632,7 @@ namespace svctl {
 	// svctl::service
 	//
 	// Primary service base class
-	class service
+	class service : virtual private svctl::auxiliary_state_machine
 	{
 	public:
 

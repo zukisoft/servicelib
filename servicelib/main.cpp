@@ -7,14 +7,26 @@
 #include <thread>
 #include <mutex>
 
+#include "service_params.h"
+
 ////////////////////////////////////////////////////
 
-class MyService : public Service<MyService>
+class MyService : public Service<MyService>,
+	private ServiceParameters<MyService>
 {
 public:
 
+	Parameter<uint32_t, REG_DWORD>  testparam { L"TestParam", 1 };
+	//Parameter<uint32_t> testparam2 = Parameter<uint32_t>(L"TestParam2", 6789);
+
 	MyService() {
 	
+		wchar_t temp[255];
+		wsprintf(temp, L"MyService::MyService: testparam = 0x%08X\r\n", &testparam);
+		OutputDebugString(temp);
+
+		testparam.m_value += 1;
+
 	}
 
 	void OnStart(int argc, svctl::tchar_t** argv)
@@ -29,7 +41,7 @@ public:
 	void OnStop(void)
 	{
 		wchar_t temp[255];
-		wsprintf(temp, L"MyService (0x%08X)::OnStop:\r\n", this);
+		wsprintf(temp, L"MyService (0x%08X)::OnStop: testparam -> %d\r\n", this, testparam.m_value);
 		OutputDebugString(temp);
 		//Sleep(5000);
 	}

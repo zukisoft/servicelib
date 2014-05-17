@@ -33,10 +33,12 @@
 #include <array>
 #include <functional>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <exception>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 // Windows API
@@ -406,22 +408,25 @@ namespace svctl {
 		// OnContinue
 		//
 		// Invoked when the derived service is continued
-		virtual void OnContinue(void) = 0;
+		virtual void OnContinue(void) {}   
+		
+		// TODO: do I want these to stay defaulted or change this entirely.
+		// Can probably just do OnStart() and then OnControl() or something
 
 		// OnPause
 		//
 		// Invoked when the derived service is paused
-		virtual void OnPause(void) = 0;
+		virtual void OnPause(void) {}
 
 		// OnStart
 		//
 		// Invoked when the derived service is started
-		virtual void OnStart(int argc, tchar_t** argv) = 0;
+		virtual void OnStart(const tchar_t*, ServiceProcessType, int, tchar_t**) {}
 
 		// OnStop
 		//
 		// Invoked when the derived service is stopped
-		virtual void OnStop(void) = 0;
+		virtual void OnStop(void) {}
 	};
 
 	// svctl::auxiliary_state_machine
@@ -449,7 +454,9 @@ namespace svctl {
 		// OnStart
 		//
 		// Invokes all of the registered OnStart() methods
-		void OnStart(int argc, tchar_t** argv) { for(const auto& iterator : m_instances) iterator->OnStart(argc, argv); }
+		void OnStart(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv) { 
+			for(const auto& iterator : m_instances) iterator->OnStart(name, processtype, argc, argv); 
+		}
 
 		// OnStop
 		//
@@ -941,6 +948,8 @@ private:
 // ::ServiceModule<>
 //
 // Service process module implementation
+//
+// TODO: Implement
 
 class ServiceModule
 {

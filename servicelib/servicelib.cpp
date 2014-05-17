@@ -249,7 +249,7 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 
 		// START --> StartPending --> aux::OnStart() --> OnStart() --> Running
 		SetStatus(ServiceStatus::StartPending);
-		auxiliary_state_machine::OnStart(argc, argv);
+		auxiliary_state_machine::OnStart(name, processtype, argc, argv);
 		OnStart(argc, argv);
 		SetStatus(ServiceStatus::Running);
 
@@ -269,7 +269,7 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 
 				SetStatus(ServiceStatus::StopPending);
 				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr); }
-				auxiliary_state_machine::OnStop();
+				//auxiliary_state_machine::OnStop();		// TODO: BUGBUG
 				SetStatus(ServiceStatus::Stopped);
 				m_stopsignal.Reset();
 			}
@@ -279,7 +279,7 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 
 				SetStatus(ServiceStatus::PausePending);
 				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr); }
-				auxiliary_state_machine::OnPause();
+				//auxiliary_state_machine::OnPause();		// TODO: BUGBUG
 				SetStatus(ServiceStatus::Paused);
 				m_pausesignal.Reset();
 			}
@@ -288,7 +288,7 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 			else if(wait == WAIT_OBJECT_0 + 2) {
 				
 				SetStatus(ServiceStatus::ContinuePending);
-				auxiliary_state_machine::OnContinue();
+				//auxiliary_state_machine::OnContinue();	 // TODO: BUGBUG
 				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr); }
 				SetStatus(ServiceStatus::Running);
 				m_continuesignal.Reset();
@@ -489,16 +489,11 @@ winexception::winexception(DWORD result) : m_code(result)
 
 };	// namespace svctl
 
-
-//-----------------------------------------------------------------------------
-// ::ServiceModule
-//-----------------------------------------------------------------------------
-
 //-----------------------------------------------------------------------------
 // ::ServiceTable
 //-----------------------------------------------------------------------------
 
-// InvokeServiceStub (ServiceTable friend)
+// InvokeServiceStub (friend)
 //
 // Helper funtion used to access private s_stubs variable in ServiceTable
 inline void InvokeServiceStub(size_t index, DWORD argc, LPTSTR* argv)
@@ -579,6 +574,7 @@ int ServiceTable::Dispatch(void)
 
 		table.push_back(s_stubs[index]);				// Insert into the collection
 	}
+
 	table.push_back( { nullptr, nullptr } );			// Table needs to end with NULLs
 
 	// Attempt to start the service control dispatcher

@@ -34,7 +34,7 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 		wchar_t temp[255];
-		wsprintf(temp, L"MyService (0x%08X)::OnStart\r\n", this);
+		wsprintf(temp, L"MyService (0x%08X)::OnStart  argc=%d, argv[0] = %s\r\n", this, argc, argv[0]);
 		OutputDebugString(temp);
 	}
 

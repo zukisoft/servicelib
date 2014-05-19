@@ -213,6 +213,23 @@ const control_handler_table& service::getHandlers(void) const
 	return nohandlers;
 }
 
+ServiceProcessType service::GetProcessType(const tchar_t* name)
+{
+	HKEY hkey;
+	DWORD type;
+	DWORD cb = sizeof(DWORD);
+	tstring key = tstring(_T("SYSTEM\\CurrentControlSet\\Services\\")) + name;
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, key.c_str(), 0, KEY_READ, &hkey) != ERROR_SUCCESS)
+		throw winexception();
+	RegQueryValueEx(hkey, _T("Type"), nullptr, nullptr, reinterpret_cast<LPBYTE>(&type), &cb);
+
+	wchar_t temp[255];
+	wsprintf(temp, L"GetProcessType --> 0x%08X\r\n", type);
+	OutputDebugString(temp);
+
+	return static_cast<ServiceProcessType>(type);
+}
+
 //-----------------------------------------------------------------------------
 // service::Run (protected)
 //
@@ -220,28 +237,29 @@ const control_handler_table& service::getHandlers(void) const
 //
 // Arguments:
 //
-//	name			- Service name
-//	processtype		- Service process type
 //	argc			- Number of command line arguments
 //	argv			- Array of command line argument strings
 
-void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv)
+void service::Run(int argc, tchar_t** argv)
 {
-	_ASSERTE(name);										// Should never be a NULL pointer on entry
+	// TODO: Do I want to keep these around
+
+	_ASSERTE(argc);										// Should be at least one argument
+	m_name = argv[0];									// Set the service name dynamically
+	m_processtype = GetProcessType(m_name.c_str());		// Set the service type dynamically
 
 	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
 		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
 	// Register a service control handler for this service instance
-	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(name, handler, this);
+	SERVICE_STATUS_HANDLE statushandle = RegisterServiceCtrlHandlerEx(m_name.c_str(), handler, this);
 	if(statushandle == 0) throw winexception();
 
 	// Define a status reporting function that uses the handle and process types defined above
 	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
 
 		_ASSERTE(statushandle != 0);
-		status.dwServiceType = static_cast<DWORD>(processtype);
 		if(!SetServiceStatus(statushandle, &status)) throw winexception();
 	};
 
@@ -249,7 +267,7 @@ void service::Run(const tchar_t* name, ServiceProcessType processtype, int argc,
 
 		// START --> StartPending --> aux::OnStart() --> OnStart() --> Running
 		SetStatus(ServiceStatus::StartPending);
-		auxiliary_state_machine::OnStart(name, processtype, argc, argv);
+		///auxiliary_state_machine::OnStart(name, processtype, argc, argv);
 		OnStart(argc, argv);
 		SetStatus(ServiceStatus::Running);
 
@@ -335,7 +353,7 @@ void service::SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, 
 
 	// Create and initialize a new SERVICE_STATUS for this operation
 	SERVICE_STATUS newstatus;
-	newstatus.dwServiceType = 0;	// <-- set in the report_status_func
+	newstatus.dwServiceType = static_cast<DWORD>(m_processtype);
 	newstatus.dwCurrentState = static_cast<DWORD>(status);
 	newstatus.dwControlsAccepted = (status == ServiceStatus::Stopped) ? 0 : AcceptedControls;
 	newstatus.dwWin32ExitCode = (status == ServiceStatus::Stopped) ? win32exitcode : ERROR_SUCCESS;
@@ -373,7 +391,7 @@ void service::SetPendingStatus(ServiceStatus status)
 
 			// Create and initialize a new SERVICE_STATUS for this operation
 			SERVICE_STATUS pendingstatus;
-			pendingstatus.dwServiceType = 0;	// <-- set in the report_status_func
+			pendingstatus.dwServiceType = static_cast<DWORD>(m_processtype);
 			pendingstatus.dwCurrentState = static_cast<DWORD>(status);
 			pendingstatus.dwControlsAccepted = accept;
 			pendingstatus.dwWin32ExitCode = ERROR_SUCCESS;
@@ -493,60 +511,6 @@ winexception::winexception(DWORD result) : m_code(result)
 // ::ServiceTable
 //-----------------------------------------------------------------------------
 
-// InvokeServiceStub (friend)
-//
-// Helper funtion used to access private s_stubs variable in ServiceTable
-inline void InvokeServiceStub(size_t index, DWORD argc, LPTSTR* argv)
-{
-	_ASSERTE(index < ServiceTable::MAX_SERVICES);
-	ServiceTable::s_stubs[index].Invoke(argc, argv);
-}
-
-// ServiceTable::s_stubs
-//
-// In order to support dynamically named services, a collection of predefined 
-// ServiceMain entry points still need to exist.  Each service_stub contains such
-// a unique entry point that calls back into itself to get the name, process type
-// and service class entry point set by the Dispatch() method
-std::array<svctl::service_stub, ServiceTable::MAX_SERVICES> ServiceTable::s_stubs = {
-
-	// This is ugly, but the lambda must be declared with the LPSERVICE_MAIN_FUNCTION protoype, which
-	// prevents capturing any arguments, therefore the indexes must be hard-coded for now
-
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(0, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(1, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(2, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(3, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(4, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(5, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(6, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(7, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(8, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(9, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(10, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(11, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(12, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(13, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(14, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(15, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(16, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(17, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(18, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(19, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(20, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(21, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(22, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(23, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(24, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(25, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(26, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(27, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(28, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(29, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(30, argc, argv); }),
-	svctl::service_stub([](DWORD argc, LPTSTR* argv) -> void { InvokeServiceStub(31, argc, argv); }),
-};
-
 //-----------------------------------------------------------------------------
 // ServiceTable::Dispatch
 //
@@ -558,21 +522,13 @@ std::array<svctl::service_stub, ServiceTable::MAX_SERVICES> ServiceTable::s_stub
 
 int ServiceTable::Dispatch(void)
 {
-	// Can only have as many services as there are service_stubs defined
-	if(vector::size() > s_stubs.size()) return E_BOUNDS;
-
-	// Determine the service process type to set based on the number of services
-	ServiceProcessType processtype = (vector::size() > 1) ? ServiceProcessType::Shared : ServiceProcessType::Unique;
-
 	// Convert the collection into SERVICE_TABLE_ENTRY structures for the service control manager
 	std::vector<SERVICE_TABLE_ENTRY> table;
 	for(size_t index = 0; index < vector::size(); index++) {
 
-		// The static stub requires the correct name, process type and real entry point set
+		// TODO: Fix comments
 		const svctl::service_table_entry& entry = vector::at(index);
-		s_stubs[index].Set(entry.Name, processtype, entry.ServiceMain);
-
-		table.push_back(s_stubs[index]);				// Insert into the collection
+		table.push_back( { const_cast<LPTSTR>(entry.Name), entry.ServiceMain } );
 	}
 
 	table.push_back( { nullptr, nullptr } );			// Table needs to end with NULLs

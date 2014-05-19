@@ -200,11 +200,6 @@ namespace svctl {
 	// Function used to report a service status to the service control manager
 	typedef std::function<void(SERVICE_STATUS&)> report_status_func;
 
-	// svctl::service_main_func
-	//
-	// Function used to define a service-specific static ServiceMain() entry point
-	typedef std::function<void(const tchar_t*, ServiceProcessType, int, tchar_t**)> service_main_func;
- 
 	// svctl::signal_type
 	//
 	// Constant used to define the type of signal created by svctl::signal<>
@@ -421,7 +416,7 @@ namespace svctl {
 		// OnStart
 		//
 		// Invoked when the derived service is started
-		virtual void OnStart(const tchar_t*, ServiceProcessType, int, tchar_t**) {}
+		virtual void OnStart(int, tchar_t**) {}
 
 		// OnStop
 		//
@@ -454,8 +449,8 @@ namespace svctl {
 		// OnStart
 		//
 		// Invokes all of the registered OnStart() methods
-		void OnStart(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv) { 
-			for(const auto& iterator : m_instances) iterator->OnStart(name, processtype, argc, argv); 
+		void OnStart(int argc, tchar_t** argv) { 
+			for(const auto& iterator : m_instances) iterator->OnStart(argc, argv); 
 		}
 
 		// OnStop
@@ -524,67 +519,6 @@ namespace svctl {
 	// as a vector of unique pointers to control_handler instances ...
 	typedef std::vector<std::unique_ptr<svctl::control_handler>> control_handler_table;
 
-	// svctl::service_stub
-	//
-	// Used to define a static table of service entries that in turn have a unique static
-	// LPSERVICE_MAIN_FUNCTION to invoke a derived service's ServiceMain entry point with
-	// the name and process type specified at runtime
-	class service_stub
-	{
-	public:
-
-		// Instance Constructor
-		service_stub(LPSERVICE_MAIN_FUNCTION stubmain) : m_stubmain(stubmain) {}
-
-		// operator SERVICE_TABLE_ENTRY()
-		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_stubmain }; }
-
-		// Invoke
-		//
-		// Invokes the actual ServiceMain() using the arguments set for this entry
-		void Invoke(DWORD argc, tchar_t** argv) 
-		{
-			_ASSERTE(m_name);
-			_ASSERTE(m_servicemain != nullptr);
-			_ASSERTE(static_cast<int>(m_processtype) != 0);
-
-			// Invoke the service::ServiceMain<T> assigned to this table entry slot
-			m_servicemain(m_name, m_processtype, static_cast<int>(argc), argv);
-		}
-
-		// Set
-		//
-		// Alters the name, process type and entry point portions of the stub entry
-		void Set(const tchar_t* name, ServiceProcessType processtype, const service_main_func& servicemain)
-		{
-			m_name = name;
-			m_processtype = processtype;
-			m_servicemain = servicemain;
-		}
-		
-	private:
-
-		// m_name
-		//
-		// Defines what the runtime name of the service will be
-		const tchar_t* m_name = nullptr;
-
-		// m_processtype
-		//
-		// Defines what the runtime process type of the service will be
-		ServiceProcessType m_processtype = static_cast<ServiceProcessType>(0);
-
-		// m_servicemain
-		//
-		// Points to the service::ServiceMain<T> for this service entry
-		service_main_func m_servicemain;
-
-		// m_stubmain
-		//
-		// Defines the stub ServiceMain() function defined for this entry
-		LPSERVICE_MAIN_FUNCTION m_stubmain;
-	};
-
 	// svctl::service_table_entry
 	//
 	// Defines a name and entry point for Service-derived class
@@ -598,6 +532,9 @@ namespace svctl {
 		// Assignment Operator
 		service_table_entry& operator=(const service_table_entry&)=default;
 
+		// todo
+		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_servicemain }; }
+
 		// Name
 		//
 		// Gets the service name
@@ -607,13 +544,13 @@ namespace svctl {
 		// ServiceMain
 		//
 		// Gets the address of the service::ServiceMain function
-		__declspec(property(get=getServiceMain)) const service_main_func& ServiceMain;
-		const service_main_func& getServiceMain(void) const { return m_servicemain; }
+		__declspec(property(get=getServiceMain)) const LPSERVICE_MAIN_FUNCTION ServiceMain;
+		const LPSERVICE_MAIN_FUNCTION getServiceMain(void) const { return m_servicemain; }
 
 	protected:
 
 		// Instance constructor
-		service_table_entry(const tchar_t* name, const service_main_func& servicemain) :
+		service_table_entry(const tchar_t* name, const LPSERVICE_MAIN_FUNCTION servicemain) :
 			m_name(name), m_servicemain(servicemain) {}
 
 	private:
@@ -626,7 +563,7 @@ namespace svctl {
 		// m_servicemain
 		//
 		// The service ServiceMain() static entry point
-		service_main_func m_servicemain;
+		LPSERVICE_MAIN_FUNCTION m_servicemain;
 	};
 
 	// svctl::service
@@ -652,7 +589,7 @@ namespace svctl {
 		// Run
 		//
 		// Service entry point
-		void Run(const tchar_t* name, ServiceProcessType processtype, int argc, tchar_t** argv);
+		void Run(int argc, tchar_t** argv);
 
 		// Handlers
 		//
@@ -685,6 +622,11 @@ namespace svctl {
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
 
+		// GetProcessType
+		//
+		// Reads the service process type from the system registry
+		static ServiceProcessType GetProcessType(const tchar_t* name);
+
 		// SetNonPendingStatus
 		//
 		// Sets a non-pending status
@@ -714,10 +656,20 @@ namespace svctl {
 		// Signal (event) object used to continue the service when paused
 		signal<signal_type::ManualReset> m_continuesignal;
 
+		// m_name
+		//
+		// Service name
+		tstring m_name;
+
 		// m_pausesignal
 		//
 		// Signal (event) object used to pause the service
 		signal<signal_type::ManualReset> m_pausesignal;
+
+		// m_processtype
+		//
+		// Service process type
+		ServiceProcessType m_processtype;
 
 		// m_status
 		//
@@ -891,26 +843,10 @@ public:
 	// Dispatches the service table to the service control manager
 	int Dispatch(void);
 
-	// InvokeServiceStub
-	//
-	// Friend function that accesses and invokes an s_stubs service_stub
-	friend void InvokeServiceStub(size_t index, DWORD argc, LPTSTR* argv);
-
 private:
 
 	ServiceTable(const ServiceTable&)=delete;
 	ServiceTable& operator=(const ServiceTable&)=delete;
-
-	// MAX_SERVICES
-	//
-	// Maximum number of services that can be represented in the table as this
-	// will be the number of service_stubs generated
-	static const int MAX_SERVICES = 32;
-
-	// s_stubs
-	//
-	// Array of service stub entries
-	static std::array<svctl::service_stub, MAX_SERVICES> s_stubs;
 };
 
 //-----------------------------------------------------------------------------
@@ -936,11 +872,10 @@ private:
 	// ServiceMain
 	//
 	// Service entry point, specific for the derived class object
-	static void ServiceMain(const svctl::tchar_t* name, ServiceProcessType processtype, int argc, svctl::tchar_t** argv)
+	static void WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
 	{
 		std::unique_ptr<_derived> instance = std::make_unique<_derived>();
-		if(instance) instance->Run(name, processtype, argc, argv);
-		else throw svctl::winexception(E_OUTOFMEMORY);
+		instance->Run(static_cast<int>(argc), argv);
 	}
 };
 

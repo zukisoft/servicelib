@@ -42,13 +42,13 @@ namespace svctl {
 //
 //	instance		- auxiliary_state interface instance pointer
 
-void auxiliary_state_machine::RegisterAuxiliaryState(struct auxiliary_state* instance)
-{
-	_ASSERTE(instance != nullptr);
-	if(!instance) throw winexception(E_INVALIDARG);
-
-	m_instances.push_back(instance);
-}
+//void auxiliary_state_machine::RegisterAuxiliaryState(struct auxiliary_state* instance)
+//{
+//	_ASSERTE(instance != nullptr);
+//	if(!instance) throw winexception(E_INVALIDARG);
+//
+//	m_instances.push_back(instance);
+//}
 
 //-----------------------------------------------------------------------------
 // svctl::resstring

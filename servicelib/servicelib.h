@@ -594,7 +594,7 @@ namespace svctl {
 		// Run
 		//
 		// Service entry point
-		void Run(int argc, tchar_t** argv);
+		void ServiceMain(int argc, tchar_t** argv);
 
 		//template <class _derived>
 		//static void WINAPI ServiceMain(DWORD argc, LPTSTR* argv);
@@ -659,20 +659,10 @@ namespace svctl {
 		// Signal (event) object used to continue the service when paused
 		signal<signal_type::ManualReset> m_continuesignal;
 
-		// m_name
-		//
-		// Service name
-		tstring m_name;
-
 		// m_pausesignal
 		//
 		// Signal (event) object used to pause the service
 		signal<signal_type::ManualReset> m_pausesignal;
-
-		// m_processtype
-		//
-		// Service process type
-		ServiceProcessType m_processtype;
 
 		// m_status
 		//
@@ -815,7 +805,7 @@ template <class _derived>
 struct ServiceTableEntry : public svctl::service_table_entry
 {
 	// Instance constructor
-	explicit ServiceTableEntry(const svctl::tchar_t* name) : service_table_entry(name, &_derived::ServiceMain) {}
+	explicit ServiceTableEntry(const svctl::tchar_t* name) : service_table_entry(name, &_derived::_ServiceMain) {}
 };
 
 //-----------------------------------------------------------------------------
@@ -875,10 +865,10 @@ private:
 	// ServiceMain
 	//
 	// Service entry point, specific for the derived class object
-	static void WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
+	static void WINAPI _ServiceMain(DWORD argc, LPTSTR* argv)
 	{
 		std::unique_ptr<_derived> instance = std::make_unique<_derived>();
-		instance->Run(static_cast<int>(argc), argv);
+		instance->ServiceMain(static_cast<int>(argc), argv);
 	}
 };
 

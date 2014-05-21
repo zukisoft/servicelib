@@ -28,6 +28,33 @@
 namespace svctl {
 
 //-----------------------------------------------------------------------------
+// svctl::GetServiceProcessType
+//
+// Reads the service process type flags from the registry
+//
+// Arguments:
+//
+//	name		- Service key name
+
+ServiceProcessType GetServiceProcessType(const tchar_t* name)
+{
+	HKEY			key;						// Service registry key
+	DWORD			value = 0;					// REG_DWORD value buffer
+	DWORD			cb = sizeof(value);			// Size of value buffer
+
+	// Attempt to open the service registry key with read-only access
+	tstring path = tstring(_T("SYSTEM\\CurrentControlSet\\Services\\")) + name;
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, path.c_str(), 0, KEY_READ, &key) == ERROR_SUCCESS) {
+		
+		// Attempt to grab the Type REG_DWORD value from the registry and close the key
+		RegQueryValueEx(key, _T("Type"), nullptr, nullptr, reinterpret_cast<LPBYTE>(&value), &cb);
+		RegCloseKey(key);
+	}
+
+	return static_cast<ServiceProcessType>(value);
+}
+
+//-----------------------------------------------------------------------------
 // svctl::auxiliary_state_machine
 //-----------------------------------------------------------------------------
 
@@ -213,23 +240,6 @@ const control_handler_table& service::getHandlers(void) const
 	return nohandlers;
 }
 
-ServiceProcessType service::GetProcessType(const tchar_t* name)
-{
-	HKEY hkey;
-	DWORD type;
-	DWORD cb = sizeof(DWORD);
-	tstring key = tstring(_T("SYSTEM\\CurrentControlSet\\Services\\")) + name;
-	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, key.c_str(), 0, KEY_READ, &hkey) != ERROR_SUCCESS)
-		throw winexception();
-	RegQueryValueEx(hkey, _T("Type"), nullptr, nullptr, reinterpret_cast<LPBYTE>(&type), &cb);
-
-	wchar_t temp[255];
-	wsprintf(temp, L"GetProcessType --> 0x%08X\r\n", type);
-	OutputDebugString(temp);
-
-	return static_cast<ServiceProcessType>(type);
-}
-
 //-----------------------------------------------------------------------------
 // service::Run (protected)
 //
@@ -246,7 +256,7 @@ void service::Run(int argc, tchar_t** argv)
 
 	_ASSERTE(argc);										// Should be at least one argument
 	m_name = argv[0];									// Set the service name dynamically
-	m_processtype = GetProcessType(m_name.c_str());		// Set the service type dynamically
+	m_processtype = GetServiceProcessType(m_name.c_str());		// Set the service type dynamically
 
 	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 

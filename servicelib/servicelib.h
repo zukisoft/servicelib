@@ -32,8 +32,6 @@
 // Standard Template Library
 #include <array>
 #include <functional>
-#include <initializer_list>
-#include <map>
 #include <memory>
 #include <exception>
 #include <string>
@@ -43,8 +41,6 @@
 
 // Windows API
 #include <Windows.h>
-#include <shellapi.h>
-#pragma comment(lib, "shell32.lib")
 
 #pragma warning(push, 4)
 
@@ -208,6 +204,15 @@ namespace svctl {
 		AutomaticReset	= FALSE,
 		ManualReset		= TRUE,
 	};
+
+	//
+	// Global Functions
+	//
+
+	// svctl::GetServiceProcessType
+	//
+	// Reads the service process type bitmask from the registry
+	ServiceProcessType GetServiceProcessType(const tchar_t* name);
 
 	//
 	// Exception Classes
@@ -624,11 +629,6 @@ namespace svctl {
 		//
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
-
-		// GetProcessType
-		//
-		// Reads the service process type from the system registry
-		static ServiceProcessType GetProcessType(const tchar_t* name);
 
 		// SetNonPendingStatus
 		//

@@ -32,6 +32,7 @@
 // Standard Template Library
 #include <array>
 #include <functional>
+#include <future>
 #include <memory>
 #include <exception>
 #include <string>
@@ -591,13 +592,31 @@ namespace svctl {
 		// Invoked when the service is started; must be implemented in the service
 		virtual void OnStart(int argc, LPTSTR* argv) = 0;
 
-		// Run
+		// Continue
 		//
-		// Service entry point
-		void ServiceMain(int argc, tchar_t** argv);
+		// Continues the service from a paused state
+		DWORD Continue(void);
 
-		//template <class _derived>
-		//static void WINAPI ServiceMain(DWORD argc, LPTSTR* argv);
+		// Pause
+		//
+		// Pauses the service
+		DWORD Pause(void);
+
+		// ServiceMain
+		//
+		// Service entry point, specific for the derived class object
+		template <class _derived>
+		static void WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
+		{
+			std::unique_ptr<service> instance = std::make_unique<_derived>();
+			instance->ServiceMain(static_cast<int>(argc), argv);
+		}
+
+		// Stop
+		//
+		// Stops the service
+		DWORD Stop(void) { return Stop(ERROR_SUCCESS, ERROR_SUCCESS); }
+		DWORD Stop(DWORD win32exitcode, DWORD serviceexitcode);
 
 		// Handlers
 		//
@@ -630,6 +649,11 @@ namespace svctl {
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
 
+		// ServiceMain
+		//
+		// Service entry point
+		void ServiceMain(int argc, tchar_t** argv);
+
 		// SetNonPendingStatus
 		//
 		// Sets a non-pending status
@@ -653,16 +677,6 @@ namespace svctl {
 		// Gets what control codes the service will accept
 		__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
 		DWORD getAcceptedControls(void) const;
-
-		// m_continuesignal
-		//
-		// Signal (event) object used to continue the service when paused
-		signal<signal_type::ManualReset> m_continuesignal;
-
-		// m_pausesignal
-		//
-		// Signal (event) object used to pause the service
-		signal<signal_type::ManualReset> m_pausesignal;
 
 		// m_status
 		//
@@ -696,7 +710,7 @@ namespace svctl {
 
 		// m_stopsignal
 		//
-		// Signal (event) object used to stop the service
+		// Signal indicating that SERVICE_CONTROL_STOP has been triggered
 		signal<signal_type::ManualReset> m_stopsignal;
 	};
 
@@ -805,7 +819,7 @@ template <class _derived>
 struct ServiceTableEntry : public svctl::service_table_entry
 {
 	// Instance constructor
-	explicit ServiceTableEntry(const svctl::tchar_t* name) : service_table_entry(name, &_derived::_ServiceMain) {}
+	explicit ServiceTableEntry(const svctl::tchar_t* name) : service_table_entry(name, &svctl::service::ServiceMain<_derived>) {}
 };
 
 //-----------------------------------------------------------------------------
@@ -861,15 +875,6 @@ private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
-
-	// ServiceMain
-	//
-	// Service entry point, specific for the derived class object
-	static void WINAPI _ServiceMain(DWORD argc, LPTSTR* argv)
-	{
-		std::unique_ptr<_derived> instance = std::make_unique<_derived>();
-		instance->ServiceMain(static_cast<int>(argc), argv);
-	}
 };
 
 //-----------------------------------------------------------------------------

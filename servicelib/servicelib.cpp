@@ -108,6 +108,33 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// service::Continue
+//
+// Continues the service from a paused state
+//
+// Arguments:
+//
+//	NONE
+
+DWORD service::Continue(void)
+{
+	lock critsec(m_statuslock);
+
+	// Service has to be in a status of PAUSED to accept this control
+	if(m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
+	SetStatus(ServiceStatus::ContinuePending);
+
+	// Use a single pooled thread to invoke all of the CONTINUE handlers
+	std::async(std::launch::async, [=]() {
+
+		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr);
+		SetStatus(ServiceStatus::Running);
+	});
+
+	return ERROR_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------
 // service::ControlHandler (private)
 //
 // Handles a service control request from the service control manager
@@ -125,45 +152,11 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Nothing should be coming in from the service control manager when stopped
 	if(m_status == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
 
-	///// TODO: these aren't quite right based on the model I chose; the way I did
-	// this the CONTINUE event should queue up after PAUSE not be declined
-	//
-	// PAUSE controls are allowed to be redundant by the service control manager
-	// and should not be accepted if the service is not in a RUNNING state
-	if(control == ServiceControl::Pause) {
-
-		if((m_status == ServiceStatus::Paused) || (m_status == ServiceStatus::PausePending)) return ERROR_SUCCESS;
-		if(m_status != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
-	}
-
-	// CONTINUE controls are allowed to be redundant by the service control manager
-	// and should not be accepted if the service is not in a PAUSED state
-	else if(control == ServiceControl::Continue) {
-
-		if((m_status == ServiceStatus::Running) || (m_status == ServiceStatus::ContinuePending)) return ERROR_SUCCESS;
-		if(m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
-	}
-
-	// INTERROGATE, STOP, PAUSE and CONTINUE are all special case handlers
+	// INTERROGATE, STOP, PAUSE and CONTINUE are special case handlers
 	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
-	else if(control == ServiceControl::Stop) { 
-		
-		if(!m_statusworker.joinable()) SetPendingStatus(ServiceStatus::StopPending);
-		m_stopsignal.Set(); 
-		return ERROR_SUCCESS; 
-	}
-	else if(control == ServiceControl::Pause) { 
-		
-		if(!m_statusworker.joinable()) SetPendingStatus(ServiceStatus::PausePending);
-		m_pausesignal.Set(); 
-		return ERROR_SUCCESS; 
-	}
-	else if(control == ServiceControl::Continue) { 
-		
-		if(!m_statusworker.joinable()) SetPendingStatus(ServiceStatus::ContinuePending);
-		m_continuesignal.Set(); 
-		return ERROR_SUCCESS; 
-	}
+	else if(control == ServiceControl::Stop) { Stop(); return ERROR_SUCCESS; }
+	else if(control == ServiceControl::Pause) { Pause(); return ERROR_SUCCESS; }
+	else if(control == ServiceControl::Continue) { Continue(); return ERROR_SUCCESS; }
 
 	// Done with messing about with the current service status; release the critsec
 	critsec.Release();
@@ -241,7 +234,34 @@ const control_handler_table& service::getHandlers(void) const
 }
 
 //-----------------------------------------------------------------------------
-// service::ServiceMain (protected)
+// service::Pause
+//
+// Pauses the service
+//
+// Arguments:
+//
+//	NONE
+
+DWORD service::Pause(void)
+{
+	lock critsec(m_statuslock);
+
+	// Service has to be in a status of RUNNING to accept this control
+	if(m_status != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
+	SetStatus(ServiceStatus::PausePending);
+
+	// Use a single pooled thread to invoke all of the PAUSE handlers
+	std::async(std::launch::async, [=]() {
+
+		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr);
+		SetStatus(ServiceStatus::Paused);
+	});
+
+	return ERROR_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------
+// service::ServiceMain
 //
 // Service instance entry point
 //
@@ -252,7 +272,7 @@ const control_handler_table& service::getHandlers(void) const
 
 void service::ServiceMain(int argc, tchar_t** argv)
 {
-	_ASSERTE(argc);
+	_ASSERTE(argc);						// Service name = argv[0]
 
 	// Read the service process type flags dynamically from the registry
 	ServiceProcessType processtype = GetServiceProcessType(argv[0]);
@@ -275,57 +295,11 @@ void service::ServiceMain(int argc, tchar_t** argv)
 
 	try {
 
-		// START --> StartPending --> aux::OnStart() --> OnStart() --> Running
+		// Start the service and just wait here until it's stopped
 		SetStatus(ServiceStatus::StartPending);
-		///auxiliary_state_machine::OnStart(name, processtype, argc, argv);
 		OnStart(argc, argv);
 		SetStatus(ServiceStatus::Running);
-
-		// The primary service control functions (STOP, PAUSE and CONTINUE) are handled here in the
-		// main service thread rather than in the control handler, and are signaled via event objects
-		std::array<HANDLE, 3> signals = { m_stopsignal, m_pausesignal, m_continuesignal };
-		DWORD wait = WAIT_FAILED;
-
-		// Only loop until the STOP event has been signaled
-		while(wait != WAIT_OBJECT_0) {
-
-			// Wait for one of the three primary service control events to be signaled
-			wait = WaitForMultipleObjects(static_cast<DWORD>(signals.size()), signals.data(), FALSE, INFINITE);
-
-			// WAIT_OBJECT_0: STOP --> StopPending --> OnStop() --> aux::OnStop() --> Stopped
-			if(wait == WAIT_OBJECT_0) {
-
-				SetStatus(ServiceStatus::StopPending);
-				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr); }
-				//auxiliary_state_machine::OnStop();		// TODO: BUGBUG
-				SetStatus(ServiceStatus::Stopped);
-				m_stopsignal.Reset();
-			}
-			
-			// WAIT_OBJECT_0 + 1: PAUSE --> PausePending --> OnPause() --> aux::OnPause() --> Paused
-			else if(wait == WAIT_OBJECT_0 + 1) {
-
-				SetStatus(ServiceStatus::PausePending);
-				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr); }
-				//auxiliary_state_machine::OnPause();		// TODO: BUGBUG
-				SetStatus(ServiceStatus::Paused);
-				m_pausesignal.Reset();
-			}
-
-			// WAIT_OBJECT_0 + 2: CONTINUE --> ContinuePending --> aux::OnContinue() --> OnContinue() --> Running
-			else if(wait == WAIT_OBJECT_0 + 2) {
-				
-				SetStatus(ServiceStatus::ContinuePending);
-				//auxiliary_state_machine::OnContinue();	 // TODO: BUGBUG
-				for(const auto& handler : Handlers) { if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr); }
-				SetStatus(ServiceStatus::Running);
-				m_continuesignal.Reset();
-			}
-
-			// WAIT_FAILED: Error
-			else if(wait == WAIT_FAILED) throw winexception();
-			else throw winexception(E_FAIL);
-		}
+		WaitForSingleObject(m_stopsignal, INFINITE);
 	}
 
 	catch(winexception& ex) { 
@@ -390,27 +364,29 @@ void service::SetPendingStatus(ServiceStatus status)
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
 
-	// Block all controls during SERVICE_START_PENDING and SERVICE_STOP_PENDING only
-	DWORD accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 
-		0 : AcceptedControls;
+	// Block all controls during SERVICE_START_PENDING and SERVICE_STOP_PENDING, otherwise only block
+	// controls that would result in a service status change while a status change is pending
+	DWORD accept = ((status == ServiceStatus::StartPending) || (status == ServiceStatus::StopPending)) ? 0 
+		: (AcceptedControls & ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE | SERVICE_ACCEPT_SHUTDOWN));
+
+	// Set the initial pending status before launching the worker thread
+	SERVICE_STATUS newstatus;
+	newstatus.dwServiceType = 0;			// <-- Set by m_statusfunc
+	newstatus.dwCurrentState = static_cast<DWORD>(status);
+	newstatus.dwControlsAccepted = accept;
+	newstatus.dwWin32ExitCode = ERROR_SUCCESS;
+	newstatus.dwServiceSpecificExitCode = ERROR_SUCCESS;
+	newstatus.dwCheckPoint = 1;
+	newstatus.dwWaitHint = (status == ServiceStatus::StartPending) ? STARTUP_WAIT_HINT : PENDING_WAIT_HINT;
+	m_statusfunc(newstatus);
 
 	// Kick off a new worker thread to manage the automatic checkpoint operation
 	m_statusworker = std::move(std::thread([=]() {
 
 		try {
 
-			// Create and initialize a new SERVICE_STATUS for this operation
-			SERVICE_STATUS pendingstatus;
-			pendingstatus.dwServiceType = 0;			// <-- Set by m_statusfunc
-			pendingstatus.dwCurrentState = static_cast<DWORD>(status);
-			pendingstatus.dwControlsAccepted = accept;
-			pendingstatus.dwWin32ExitCode = ERROR_SUCCESS;
-			pendingstatus.dwServiceSpecificExitCode = ERROR_SUCCESS;
-			pendingstatus.dwCheckPoint = 1;
-			pendingstatus.dwWaitHint = (status == ServiceStatus::StartPending) ? STARTUP_WAIT_HINT : PENDING_WAIT_HINT;
-
-			// Set the initial pending status
-			m_statusfunc(pendingstatus);
+			// Copy the previous SERVICE_STATUS into a structure on the thread's stack
+			SERVICE_STATUS pendingstatus = newstatus;
 
 			// Continually report the same pending status with an incremented checkpoint until signaled
 			while(WaitForSingleObject(m_statussignal, PENDING_CHECKPOINT_INTERVAL) == WAIT_TIMEOUT) {
@@ -455,8 +431,7 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 		m_statussignal.Reset();
 
 		// Check for the presence of an exception from the worker thread and rethrow it
-		if(m_statusexception) 
-			std::rethrow_exception(m_statusexception);
+		if(m_statusexception) std::rethrow_exception(m_statusexception);
 	}
 
 	// Invoke the proper status helper based on the type of status being set
@@ -485,7 +460,38 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 		default: throw winexception(E_INVALIDARG);
 	}
 	
-	m_status = status;					// Service status has been changed
+	m_status = status;						// Service status has been changed		
+}
+
+//-----------------------------------------------------------------------------
+// service::Stop
+//
+// Stops the service
+//
+// Arguments:
+//
+//	win32exitcode		- Win32 service exit code
+//	serviceexitcode		- Service specific exit code
+
+DWORD service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
+{
+	lock critsec(m_statuslock);
+
+	// Service cannot be stopped unless it's RUNNING or PAUSED, this could cause
+	// potential race conditions in the derived service class; better to block it
+	if(m_status != ServiceStatus::Running && m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
+	SetStatus(ServiceStatus::StopPending);
+
+	// Use a single pooled thread to invoke all of the STOP handlers
+	std::async(std::launch::async, [=]() {
+
+		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr);
+		SetStatus(ServiceStatus::Stopped, win32exitcode, serviceexitcode);
+
+		m_stopsignal.Set();				// Signal the exit from the main thread
+	});
+
+	return ERROR_SUCCESS;
 }
 
 //-----------------------------------------------------------------------------

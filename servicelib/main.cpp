@@ -6,6 +6,7 @@
 #include "resource.h"
 #include <thread>
 #include <mutex>
+#include <future>
 
 ////////////////////////////////////////////////////
 
@@ -30,6 +31,7 @@ public:
 
 	void OnPause(void)
 	{
+		Sleep(15000);
 	}
 
 	// BEGIN_CONTROL_MAP()

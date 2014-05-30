@@ -10,6 +10,7 @@
 
 ////////////////////////////////////////////////////
 
+
 class MyService : public Service<MyService>
 {
 public:
@@ -34,22 +35,24 @@ public:
 		Sleep(15000);
 	}
 
-	// BEGIN_CONTROL_MAP()
-	const svctl::control_handler_table& getHandlers(void) const
+	DWORD OnMyCommand(void)
 	{
-		static std::unique_ptr<svctl::control_handler> handlers[] = { 
-			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Stop, &MyService::OnStop),
-			std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Pause, &MyService::OnPause), 
-			//std::make_unique<ServiceControlHandler<MyService>>(ServiceControl::Continue, &MyService::OnContinue) 
-		};
-		static svctl::control_handler_table v { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) };
-		return v;
+		OutputDebugString(L"MyService::OnMyCommand!\r\n");
+		return ERROR_SUCCESS;
 	}
+
+	BEGIN_CONTROL_HANDLER_MAP(MyService)
+		CONTROL_HANDLER(ServiceControl::Stop, OnStop)
+		CONTROL_HANDLER(ServiceControl::Pause, OnPause)
+		CONTROL_HANDLER(200, OnMyCommand)
+	END_CONTROL_HANDLER_MAP()
 
 private:
 
 	MyService(const MyService&)=delete;
 	MyService& operator=(const MyService&)=delete;
+
+	HANDLE mywait;
 
 };
 

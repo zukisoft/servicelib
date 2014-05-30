@@ -37,7 +37,6 @@
 #include <exception>
 #include <string>
 #include <thread>
-#include <type_traits>
 #include <vector>
 
 // Windows API
@@ -922,6 +921,56 @@ private:
 	ServiceModule(const ServiceModule&)=delete;
 	ServiceModule& operator=(const ServiceModule&)=delete;
 };
+
+// CONTROL_HANDLER_MAP
+//
+// Used to declare the getHandlers virtual function implementation for the service.
+// The old service template library allowed for differing types of handlers (inline,
+// asynchronous, and event object handles); this complexity has been removed.
+//
+// PAUSE, CONTINUE and STOP handlers will be invoked asynchronously via a pooled thread
+// since they involve an automatic pending state change.  Any other handlers are invoked
+// inline from HandlerEx in the order that they are declared, it is up to the service
+// implementation to process them and return as promptly as possible.  Custom control codes
+// are supported but must fall in the range of 128 through 255 (See HandlerEx on MSDN)
+//
+// Handler functions must be nonstatic member functions that adhere to one of the following
+// four function signatures.  An implicit ERROR_SUCCESS (0) is returned on behalf of the
+// handler when a "void" version has been selected.
+//
+//		void	MyHandler(void)
+//		void	MyHandler(DWORD eventtype, void* eventdata)
+//		DWORD	MyHandler(void)
+//		DWORD	MyHandler(DWORD eventtype, void* eventdata)
+//
+// A dummy handler for SERVICE_CONTROL_INTERROGATE is added to allow for a blank handler
+// map to compile without errors, however this method will never be called as this control
+// is blocked by the HandlerEx implementation.
+//
+// Sample usage:
+//
+//	BEGIN_CONTROL_HANDLER_MAP(MyService)
+//		CONTROL_HANDLER(ServiceControl::Stop, OnStop)
+//		CONTROL_HANDLER(ServiceControl::ParamChange, OnParameterChange)
+//		CONTROL_HANDLER(200, OnMyCustomCommand)
+//	END_CONTROL_HANDLER_MAP()
+//
+#define BEGIN_CONTROL_HANDLER_MAP(_class) \
+	typedef _class __control_map_class; \
+	void __null_handler##_class(void) { return; } \
+	const svctl::control_handler_table& getHandlers(void) const \
+	{ \
+		static std::unique_ptr<svctl::control_handler> handlers[] = { \
+		std::make_unique<ServiceControlHandler<__control_map_class>>(ServiceControl::Interrogate, &__control_map_class::__null_handler##_class),
+
+#define CONTROL_HANDLER(_control, _func) \
+		std::make_unique<ServiceControlHandler<__control_map_class>>(static_cast<ServiceControl>(_control), &__control_map_class::_func),
+
+#define END_CONTROL_HANDLER_MAP() \
+		}; \
+		static svctl::control_handler_table table { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) }; \
+		return table; \
+	}
 
 //-----------------------------------------------------------------------------
 

@@ -59,6 +59,39 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// auxiliary_state_machine::AuxServiceControl
+//
+// Invoked when a service control has been recieved for the service
+//
+// Arguments:
+//
+//	control		- Control code recieved from the service control manager
+//	eventtype	- Event type code sent from the service control manager
+//	eventdata	- Event data sent from the service control manager
+
+void auxiliary_state_machine::AuxServiceControl(ServiceControl control, DWORD eventtype, void* eventdata)
+{
+	(control);
+	(eventtype);
+	(eventdata);
+}
+
+//-----------------------------------------------------------------------------
+// auxiliary_state_machine::AuxStart
+//
+// Invoked when the service is being started
+//
+// Arguments:
+//
+//	argc		- Number of command line arguments
+//	argv		- Array of command line argument strings
+
+void auxiliary_state_machine::AuxStart(int argc, tchar_t** argv)
+{
+	for(const auto& iterator : m_instances) iterator->AuxStart(argc, argv);
+}
+
+//-----------------------------------------------------------------------------
 // auxiliary_state_machine::RegisterAuxiliaryState (protected)
 //
 // Registers an auxiliary class with the state machine.  This should be called
@@ -69,13 +102,13 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 //
 //	instance		- auxiliary_state interface instance pointer
 
-//void auxiliary_state_machine::RegisterAuxiliaryState(struct auxiliary_state* instance)
-//{
-//	_ASSERTE(instance != nullptr);
-//	if(!instance) throw winexception(E_INVALIDARG);
-//
-//	m_instances.push_back(instance);
-//}
+void auxiliary_state_machine::RegisterAuxiliaryState(struct auxiliary_state* instance)
+{
+	_ASSERTE(instance != nullptr);
+	if(!instance) throw winexception(E_INVALIDARG);
+
+	m_instances.push_back(instance);
+}
 
 //-----------------------------------------------------------------------------
 // svctl::resstring

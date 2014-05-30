@@ -402,84 +402,67 @@ namespace svctl {
 	// svctl::auxiliary_state
 	//
 	// Interface used by auxiliary classes that are tied into the service via
-	// inheritance of the auxiliary_state_machine
-	//struct __declspec(novtable) auxiliary_state
-	//{
-	//	// OnContinue
-	//	//
-	//	// Invoked when the derived service is continued
-	//	virtual void OnContinue(void) {}   
-	//	
-	//	// TODO: do I want these to stay defaulted or change this entirely.
-	//	// Can probably just do OnStart() and then OnControl() or something
+	// virtual inheritance of the auxiliary_state_machine class.  This allows the 
+	// auxiliary classes to tie into the derived service instance
+	struct __declspec(novtable) auxiliary_state
+	{
+		//
+		// TODO: AuxInstall / AuxRemove
+		//
 
-	//	// OnPause
-	//	//
-	//	// Invoked when the derived service is paused
-	//	virtual void OnPause(void) {}
-
-	//	// OnStart
-	//	//
-	//	// Invoked when the derived service is started
-	//	virtual void OnStart(int, tchar_t**) {}
-
-	//	// OnStop
-	//	//
-	//	// Invoked when the derived service is stopped
-	//	virtual void OnStop(void) {}
-	//};
+		// AuxServiceControl
+		//
+		// Invoked when a service control is received from the service control
+		// manager.  This will typically be invoked before any derived service
+		// handlers with the exceptions being PAUSE and STOP
+		virtual void AuxServiceControl(void) { return; }   
+		
+		// AuxStart
+		//
+		// Invoked when the derived service is started, this will be invoked
+		// before the derived service's implementation of OnStart()
+		virtual void AuxStart(int, tchar_t**) { return; }
+	};
 
 	// svctl::auxiliary_state_machine
 	//
 	// State machine that ties all of the auxiliary classes in a service inheritance
 	// chain together dynamically
-	//class auxiliary_state_machine
-	//{
-	//public:
+	class auxiliary_state_machine
+	{
+	public:
 
-	//	// Instance Constructor
-	//	//
-	//	auxiliary_state_machine()=default;
+		// Instance Constructor
+		//
+		auxiliary_state_machine()=default;
 
-	//	// OnContinue
-	//	//
-	//	// Invokes all of the registered OnContinue() methods
-	//	void OnContinue(void) { for(const auto& iterator : m_instances) iterator->OnContinue(); }
+		// AuxServiceControl
+		//
+		// Invokes when a control code has been received from the service control manager
+		void AuxServiceControl(ServiceControl control, DWORD eventtype, void* eventdata);
 
-	//	// OnPause
-	//	//
-	//	// Invokes all of the registered OnPause() methods
-	//	void OnPause(void) { for(const auto& iterator : m_instances) iterator->OnPause(); }
+		// AuxStart
+		//
+		// Invokes all of the registered OnStart() methods
+		void AuxStart(int argc, tchar_t** argv);
 
-	//	// OnStart
-	//	//
-	//	// Invokes all of the registered OnStart() methods
-	//	void OnStart(int argc, tchar_t** argv) { 
-	//		for(const auto& iterator : m_instances) iterator->OnStart(argc, argv); 
-	//	}
+	protected:
 
-	//	// OnStop
-	//	//
-	//	// Invokes all of the registered OnStop() methods
-	//	void OnStop(void) { for(const auto& iterator : m_instances) iterator->OnStop(); }
+		// RegisterAuxiliaryState
+		//
+		// Registers a derived class' auxiliary_state interface
+		void RegisterAuxiliaryState(struct auxiliary_state* instance);
 
-	//protected:
+	private:
 
-	//	// RegisterAuxiliaryState
-	//	//
-	//	// Registers a derived class' auxiliary_state interface
-	//	void RegisterAuxiliaryState(struct auxiliary_state* instance);
+		auxiliary_state_machine(const auxiliary_state_machine&)=delete;
+		auxiliary_state_machine& operator=(const auxiliary_state_machine&)=delete;
 
-	//private:
-
-	//	auxiliary_state_machine(const auxiliary_state_machine&)=delete;
-	//	auxiliary_state_machine& operator=(const auxiliary_state_machine&)=delete;
-
-	//	// m_instances
-	//	//
-	//	// Collection of registered auxiliary classes
-	//	std::vector<auxiliary_state*> m_instances;
-	//};
+		// m_instances
+		//
+		// Collection of registered auxiliary classes
+		std::vector<auxiliary_state*> m_instances;
+	};
 
 	// svctl::control_handler
 	//

@@ -325,25 +325,6 @@ namespace svctl {
 		bool m_locked;
 	};
 
-	// svctl::resstring
-	//
-	// Implements a tstring loaded from the module's string table
-	class resstring : public tstring
-	{
-	public:
-
-		// Instance Constructors
-		explicit resstring(unsigned int id) : resstring(id, GetModuleHandle(nullptr)) {}
-		resstring(unsigned int id, HINSTANCE instance) : tstring(GetResourceString(id, instance)) {}
-
-	private:
-
-		// GetResourceString
-		//
-		// Gets a read-only constant string pointer for a specific resource string
-		static const tchar_t* GetResourceString(unsigned int id, HINSTANCE instance);
-	};
-
 	// svctl::signal
 	//
 	// Wrapper around an unnamed Win32 Event synchronization object
@@ -398,71 +379,6 @@ namespace svctl {
 	//
 	// Service Classes
 	//
-
-	// svctl::auxiliary_state
-	//
-	// Interface used by auxiliary classes that are tied into the service via
-	// virtual inheritance of the auxiliary_state_machine class.  This allows the 
-	// auxiliary classes to tie into the derived service instance
-	struct __declspec(novtable) auxiliary_state
-	{
-		//
-		// TODO: AuxInstall / AuxRemove
-		//
-
-		// AuxServiceControl
-		//
-		// Invoked when a service control is received from the service control
-		// manager.  This will typically be invoked before any derived service
-		// handlers with the exceptions being PAUSE and STOP
-		virtual void AuxServiceControl(void) { return; }   
-		
-		// AuxStart
-		//
-		// Invoked when the derived service is started, this will be invoked
-		// before the derived service's implementation of OnStart()
-		virtual void AuxStart(int, tchar_t**) { return; }
-	};
-
-	// svctl::auxiliary_state_machine
-	//
-	// State machine that ties all of the auxiliary classes in a service inheritance
-	// chain together dynamically
-	class auxiliary_state_machine
-	{
-	public:
-
-		// Instance Constructor
-		//
-		auxiliary_state_machine()=default;
-
-		// AuxServiceControl
-		//
-		// Invokes when a control code has been received from the service control manager
-		void AuxServiceControl(ServiceControl control, DWORD eventtype, void* eventdata);
-
-		// AuxStart
-		//
-		// Invokes all of the registered OnStart() methods
-		void AuxStart(int argc, tchar_t** argv);
-
-	protected:
-
-		// RegisterAuxiliaryState
-		//
-		// Registers a derived class' auxiliary_state interface
-		void RegisterAuxiliaryState(struct auxiliary_state* instance);
-
-	private:
-
-		auxiliary_state_machine(const auxiliary_state_machine&)=delete;
-		auxiliary_state_machine& operator=(const auxiliary_state_machine&)=delete;
-
-		// m_instances
-		//
-		// Collection of registered auxiliary classes
-		std::vector<auxiliary_state*> m_instances;
-	};
 
 	// svctl::control_handler
 	//
@@ -859,58 +775,9 @@ private:
 	Service& operator=(const Service&)=delete;
 };
 
-//-----------------------------------------------------------------------------
-// ::ServiceModule<>
-//
-// Service process module implementation
-//
-// TODO: Implement
-
-class ServiceModule
-{
-public:
-
-	// Instance Constructor
-	ServiceModule()=default;
-
-	// Destructor
-	//
-	virtual ~ServiceModule()=default;
-
-	// main
-	//
-	// Entry point for console application modules
-	//int main(int argc, LPTSTR* argv)
-	//{
-	//	(argc);
-	//	(argv);
-	//	// Pass the command line arguments into the base class implementation
-	//	///return service_module::ModuleMain(argc, argv);
-	//	return 0;
-	//}
-
-	//// WinMain
-	////
-	//// Entry point for Windows application modules
-	//int WinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
-	//{
-	//	// Pass the main() style command line arguments into the base class implementation
-	//	//return service_module::ModuleMain(__argc, __targv);
-	//	return 0;
-	//}
-
-private:
-
-	ServiceModule(const ServiceModule&)=delete;
-	ServiceModule& operator=(const ServiceModule&)=delete;
-};
-
 // CONTROL_HANDLER_MAP
 //
 // Used to declare the getHandlers virtual function implementation for the service.
-// The old service template library allowed for differing types of handlers (inline,
-// asynchronous, and event object handles); this complexity has been removed.
-//
 // PAUSE, CONTINUE and STOP handlers will be invoked asynchronously via a pooled thread
 // since they involve an automatic pending state change.  Any other handlers are invoked
 // inline from HandlerEx in the order that they are declared, it is up to the service

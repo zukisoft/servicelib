@@ -4,81 +4,48 @@
 #include "stdafx.h"
 #include "servicelib.h"
 #include "resource.h"
-#include <thread>
-#include <mutex>
-#include <future>
 
-struct __declspec(novtable) state
-{
-	virtual void AuxStart(int, svctl::tchar_t**)
-	{
-	}
-};
-
-class state_machine
+// MinimalService Sample
+//
+class MinimalService : public Service<MinimalService>
 {
 public:
 
-protected:
-
-	void DoStuff(void)
-	{
-		OutputDebugString(L"DoStuff\r\n");
-		for(auto i : m_states)
-		{
-			OutputDebugString(L"Doing stuff\r\n");
-			i->AuxStart(0, nullptr);
-		}
-	}
-
-	void RegisterState(state* instance)
-	{
-		OutputDebugString(L"Registering stuff\r\n");
-		m_states.push_back(instance);
-	}
+	// Constructor / Destructor
+	MinimalService()=default;
+	virtual ~MinimalService()=default;
 
 private:
 
-	std::vector<state*> m_states;
-};
+	MinimalService(const MinimalService&)=delete;
+	MinimalService& operator=(const MinimalService&)=delete;
 
-class auxone : private virtual state_machine, public state
-{
-public:
+	// CONTROL_HANDLER_MAP
+	//
+	// Series of ATL-like macros that define a mapping of service
+	// control codes to handler functions
+	BEGIN_CONTROL_HANDLER_MAP(MinimalService)
+		CONTROL_HANDLER(ServiceControl::Stop, OnStop)
+	END_CONTROL_HANDLER_MAP()
 
-	auxone()
+	// OnStart (Service)
+	//
+	// Every service that derives from Service<> must define an OnStart()
+	void OnStart(int argc, LPTSTR* argv)
 	{
-		OutputDebugString(L"auxone::ctor\r\n");
-		state_machine::RegisterState(static_cast<auxone*>(this));
+		UNREFERENCED_PARAMETER(argc);
+		UNREFERENCED_PARAMETER(argv);
 	}
 
-	void AuxStart(int, svctl::tchar_t**)
+	// OnStop
+	//
+	// Sample control handler for ServiceControl::Stop
+	void OnStop(void)
 	{
-		OutputDebugString(L"auxone::OnStart\r\n");
-	}
-};
-
-class auxtwo : private virtual state_machine, public state
-{
-public:
-
-	auxtwo()
-	{
-		OutputDebugString(L"auxtwo::ctor\r\n");
-		state_machine::RegisterState(static_cast<auxtwo*>(this));
-	}
-
-	void AuxStart(int, svctl::tchar_t**)
-	{
-		OutputDebugString(L"auxtwo::OnStart\r\n");
 	}
 };
 
-////////////////////////////////////////////////////
-
-
-class MyService : public Service<MyService>, private virtual state_machine,
-	public auxone, public auxtwo
+class MyService : public Service<MyService>
 {
 public:
 
@@ -89,7 +56,7 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
-		state_machine::DoStuff();
+		//state_machine::DoStuff();
 
 		//wchar_t temp[255];
 		//wsprintf(temp, L"MyService (0x%08X)::OnStart  argc=%d, argv[0] = %s\r\n", this, argc, argv[0]);
@@ -135,7 +102,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 #endif	// _DEBUG
 
 	// Manual dispatching with dynamic names
-	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MyService>(L"MyService2") };
+	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MinimalService>(L"MinimalService") };
 	services.Dispatch();
 }
 

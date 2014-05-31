@@ -55,88 +55,6 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 }
 
 //-----------------------------------------------------------------------------
-// svctl::auxiliary_state_machine
-//-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
-// auxiliary_state_machine::AuxServiceControl
-//
-// Invoked when a service control has been recieved for the service
-//
-// Arguments:
-//
-//	control		- Control code recieved from the service control manager
-//	eventtype	- Event type code sent from the service control manager
-//	eventdata	- Event data sent from the service control manager
-
-void auxiliary_state_machine::AuxServiceControl(ServiceControl control, DWORD eventtype, void* eventdata)
-{
-	(control);
-	(eventtype);
-	(eventdata);
-}
-
-//-----------------------------------------------------------------------------
-// auxiliary_state_machine::AuxStart
-//
-// Invoked when the service is being started
-//
-// Arguments:
-//
-//	argc		- Number of command line arguments
-//	argv		- Array of command line argument strings
-
-void auxiliary_state_machine::AuxStart(int argc, tchar_t** argv)
-{
-	for(const auto& iterator : m_instances) iterator->AuxStart(argc, argv);
-}
-
-//-----------------------------------------------------------------------------
-// auxiliary_state_machine::RegisterAuxiliaryState (protected)
-//
-// Registers an auxiliary class with the state machine.  This should be called
-// from the constructor of an auxiliary class that derives from auxiliary_state_machine
-// as a virtual private base class
-//
-// Arguments:
-//
-//	instance		- auxiliary_state interface instance pointer
-
-void auxiliary_state_machine::RegisterAuxiliaryState(struct auxiliary_state* instance)
-{
-	_ASSERTE(instance != nullptr);
-	if(!instance) throw winexception(E_INVALIDARG);
-
-	m_instances.push_back(instance);
-}
-
-//-----------------------------------------------------------------------------
-// svctl::resstring
-//-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
-// resstring::GetResourceString (private, static)
-//
-// Gets a read-only pointer to a module string resource
-//
-// Arguments:
-//
-//	id			- Resource identifier code
-//	instance	- Module instance handle to acquire the resource from
-
-const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
-{
-	static const tchar_t EMPTY[] = _T("");		// Used for missing resources
-
-	// LoadString() has a neat trick to return a read-only string pointer
-	tchar_t* string = nullptr;
-	int result = LoadString(instance, id, reinterpret_cast<tchar_t*>(&string), 0);
-
-	// Return an empty string rather than a null pointer if the resource was missing
-	return (result == 0) ? EMPTY : string;
-}
-
-//-----------------------------------------------------------------------------
 // svctl::service
 //-----------------------------------------------------------------------------
 
@@ -571,16 +489,15 @@ winexception::winexception(DWORD result) : m_code(result)
 
 int ServiceTable::Dispatch(void)
 {
-	// Convert the collection into SERVICE_TABLE_ENTRY structures for the service control manager
+	// Convert the collection into a table of SERVICE_TABLE_ENTRY structures
 	std::vector<SERVICE_TABLE_ENTRY> table;
 	for(size_t index = 0; index < vector::size(); index++) {
 
-		// TODO: Fix comments
 		const svctl::service_table_entry& entry = vector::at(index);
 		table.push_back( { const_cast<LPTSTR>(entry.Name), entry.ServiceMain } );
 	}
 
-	table.push_back( { nullptr, nullptr } );			// Table needs to end with NULLs
+	table.push_back( { nullptr, nullptr } );		// Table needs to end with NULLs
 
 	// Attempt to start the service control dispatcher
 	if(!StartServiceCtrlDispatcher(table.data())) return static_cast<int>(GetLastError());

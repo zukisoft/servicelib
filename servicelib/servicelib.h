@@ -325,6 +325,27 @@ namespace svctl {
 		bool m_locked;
 	};
 
+	// svctl::resstring
+	//
+	// Implements a tstring loaded from the module's string table
+	class resstring : public tstring
+	{
+	public:
+
+		// Instance Constructors
+		explicit resstring(const tchar_t* str) : tstring(str) {}
+		explicit resstring(const tstring& str) : tstring(str) {}
+		explicit resstring(unsigned int id) : resstring(id, GetModuleHandle(nullptr)) {}
+		resstring(unsigned int id, HINSTANCE instance) : tstring(GetResourceString(id, instance)) {}
+
+	private:
+
+		// GetResourceString
+		//
+		// Gets a read-only constant string pointer for a specific resource string
+		static const tchar_t* GetResourceString(unsigned int id, HINSTANCE instance);
+	};
+
 	// svctl::signal
 	//
 	// Wrapper around an unnamed Win32 Event synchronization object
@@ -437,13 +458,13 @@ namespace svctl {
 		service_table_entry& operator=(const service_table_entry&)=default;
 
 		// todo
-		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name), m_servicemain }; }
+		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name.c_str()), m_servicemain }; }
 
 		// Name
 		//
 		// Gets the service name
 		__declspec(property(get=getName)) const tchar_t* Name;
-		const tchar_t* getName(void) const { return m_name; }
+		const tchar_t* getName(void) const { return m_name.c_str(); }
 
 		// ServiceMain
 		//
@@ -453,8 +474,10 @@ namespace svctl {
 
 	protected:
 
-		// Instance constructor
-		service_table_entry(const tchar_t* name, const LPSERVICE_MAIN_FUNCTION servicemain) :
+		// Instance constructors
+		service_table_entry(const tchar_t* name, const LPSERVICE_MAIN_FUNCTION servicemain) : 
+			m_name(name), m_servicemain(servicemain) {}
+		service_table_entry(tstring name, const LPSERVICE_MAIN_FUNCTION servicemain) : 
 			m_name(name), m_servicemain(servicemain) {}
 
 	private:
@@ -462,7 +485,7 @@ namespace svctl {
 		// m_name
 		//
 		// The service name
-		const tchar_t* m_name;
+		tstring m_name;
 
 		// m_servicemain
 		//
@@ -716,8 +739,13 @@ private:
 template <class _derived>
 struct ServiceTableEntry : public svctl::service_table_entry
 {
-	// Instance constructor
-	explicit ServiceTableEntry(const svctl::tchar_t* name) : service_table_entry(name, &svctl::service::ServiceMain<_derived>) {}
+	// Instance constructors
+	explicit ServiceTableEntry(LPCTSTR name) : 
+		service_table_entry(name, &svctl::service::ServiceMain<_derived>) {}
+	explicit ServiceTableEntry(unsigned int nameres) : 
+		service_table_entry(svctl::resstring(nameres), &svctl::service::ServiceMain<_derived>) {}
+	explicit ServiceTableEntry(unsigned int nameres, HINSTANCE instance) : 
+		service_table_entry(svctl::resstring(nameres, instance), &svctl::service::ServiceMain<_derived>) {}
 };
 
 //-----------------------------------------------------------------------------

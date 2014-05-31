@@ -102,7 +102,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 #endif	// _DEBUG
 
 	// Manual dispatching with dynamic names
-	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MinimalService>(L"MinimalService") };
+	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };
 	services.Dispatch();
 }
 

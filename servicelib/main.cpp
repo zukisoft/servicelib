@@ -51,6 +51,24 @@ public:
 
 	MyService()=default;
 
+	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter& param)> func)
+	{
+		func(svctl::resstring(IDS_STRING101), m_test1);
+		func(L"Test2", m_test2);
+	}
+
+	void BindParameters(void)
+	{
+		IterateParameters([&](const svctl::tstring& name, const svctl::parameter& param) -> void {
+
+			const svctl::parameter* p = &param;
+			int x = 123;
+		});
+	}
+
+	ServiceParameter<int> m_test1 = 123;
+	ServiceParameter<DWORD> m_test2;
+
 	void OnStart(int argc, svctl::tchar_t** argv)
 	{
 		UNREFERENCED_PARAMETER(argc);
@@ -100,6 +118,14 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	_CrtSetDbgFlag(nDbgFlags);								// Set the new flags
 
 #endif	// _DEBUG
+
+	MyService svc;
+	svc.BindParameters();
+
+	MyService svc2;
+	svc2.BindParameters();
+
+	return 0;
 
 	// Manual dispatching with dynamic names
 	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };

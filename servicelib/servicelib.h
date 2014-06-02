@@ -33,6 +33,7 @@
 #include <array>
 #include <functional>
 #include <future>
+#include <map>
 #include <memory>
 #include <exception>
 #include <string>
@@ -98,6 +99,20 @@ enum class ServiceErrorControl
 	Normal						= SERVICE_ERROR_NORMAL,
 	Severe						= SERVICE_ERROR_SEVERE,
 	Critical					= SERVICE_ERROR_CRITICAL,
+};
+
+// ::ServiceParameterFormat
+//
+// Strongly typed enumeration of REG_XXXX constants
+enum class ServiceParameterFormat
+{
+	None						= REG_NONE,
+	String						= REG_SZ,
+	ExpandString				= REG_EXPAND_SZ,
+	Binary						= REG_BINARY,
+	DoubleWord					= REG_DWORD,
+	StringArray					= REG_MULTI_SZ,
+	QuadWord					= REG_QWORD
 };
 
 // ::ServiceProcessType (Bitmask)
@@ -493,6 +508,92 @@ namespace svctl {
 		LPSERVICE_MAIN_FUNCTION m_servicemain;
 	};
 
+	// svctl::parameter
+	//
+	// Base class for template-specific service parameters
+	// TODO: move forward declaration of service
+	class service;
+	class parameter
+	{
+	friend class service;
+	public:
+
+		// Destructor
+		virtual ~parameter();
+
+	protected:
+
+		// Constructor
+		parameter()=default;
+
+		// GetValue
+		//
+		// Reads the parameter value and type
+		size_t GetValue(void* buffer, size_t length, ServiceParameterFormat* type);
+
+		// Name
+		//
+		// Gets the name of the bound registry value
+		__declspec(property(get=getName)) const tchar_t* Name;
+		const tchar_t* getName(void) const { return m_name.c_str(); }
+
+		// Size
+		//
+		// Gets the size, in bytes, of the parameter value
+		__declspec(property(get=getSize)) size_t Size;
+		size_t getSize(void) const { return static_cast<size_t>(m_size); }
+
+		// Type
+		//
+		// Gets the expected data type for the parameter value
+		__declspec(property(get=getType)) DWORD Type;
+		DWORD getType(void) const { return m_type; }
+
+	private:
+
+		parameter(const parameter&)=delete;
+		parameter& operator=(const parameter&)=delete;
+
+		// TODO
+		void Bind(HKEY key, const tchar_t* name);
+
+		void Load(void);
+
+		void Reset(void);
+
+		void Unbind(void);
+
+		// m_buffer
+		//
+		// Current value of the parameter
+		uint8_t* m_buffer = nullptr;
+
+		// m_lock
+		//
+		// CRITICAL_SECTION synchronization object
+		critical_section m_lock;
+
+		// m_name
+		//
+		// Bound registry value name
+		tstring m_name;
+
+		// m_parentkey
+		//
+		// Parent registry key handle
+		HKEY m_parentkey = nullptr;
+
+		// m_size
+		//
+		// Size of the value data buffer
+		DWORD m_size = 0;
+
+		// m_type
+		//
+		// Registry data type of the parameter
+		DWORD m_type = REG_NONE;
+	};
+
 	// svctl::service
 	//
 	// Primary service base class
@@ -508,15 +609,20 @@ namespace svctl {
 		// Instance Constructor
 		service()=default;
 
-		// OnStart
-		//
-		// Invoked when the service is started; must be implemented in the service
-		virtual void OnStart(int argc, LPTSTR* argv) = 0;
-
 		// Continue
 		//
 		// Continues the service from a paused state
 		DWORD Continue(void);
+
+		// IterateParameters
+		//
+		// Iterates over the collection of parameters and executes a function against each
+		virtual void IterateParameters(std::function<void(const tstring& name, parameter& param)> func);
+
+		// OnStart
+		//
+		// Invoked when the service is started; must be implemented in the service
+		virtual void OnStart(int argc, LPTSTR* argv) = 0;
 
 		// Pause
 		//
@@ -644,6 +750,22 @@ namespace svctl {
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// ::DefaultParameterFormat<>
+//
+// Function used to determine what underlying registry value format should be
+// used to read/write a ServiceParameter by default.  Specializations exist for
+// all compiler fundamental types (char, int, long, etc) as well as string
+// types (char*, wchar_t*, etc) in the servicelib.cpp file
+
+template<typename _type>
+ServiceParameterFormat DefaultParameterFormat(void)
+{ 
+	// The default format is REG_BINARY to allow for persistence of any type
+	// that does not have a matching specialization of this function
+	return ServiceParameterFormat::Binary;
+}
+
+//-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
 //
 // Specialization of the svctl::control_handler class that allows the derived
@@ -729,6 +851,69 @@ private:
 	//
 	// Set when a result_handler_ex function is provided during construction
 	const std::function<DWORD(_derived*, DWORD, void*)> m_result_handler_ex;
+};
+
+//-----------------------------------------------------------------------------
+// ::ServiceParameter
+//
+// Template version of svctl::parameter
+
+template <typename _type, ServiceParameterFormat _format = ServiceParameterFormat::None>
+class ServiceParameter : public svctl::parameter
+{
+public:
+
+	// Constructors
+	ServiceParameter() { memset(&m_default, 0, sizeof(_type)); }
+	ServiceParameter(_type defvalue) : m_default(defvalue) {}
+
+	// Destructor
+	virtual ~ServiceParameter()=default;
+
+	void Bind(const svctl::tchar_t* name, HKEY parentkey)
+	{
+		(name);
+		(parentkey);
+	}
+
+	void Unbind(void)
+	{
+	}
+
+	// Get
+	operator _type()
+	{
+		_type val;
+		ServiceParameterFormat type;
+		size_t read = GetValue(&val, sizeof(_type), &type);
+
+		if(read != sizeof(_type)) return m_default;
+		if(_format != ServiceParameterFormat::None)
+		{
+			if(type != _format) return m_default;
+		}
+		
+		return val;
+	}
+
+	// Set
+	ServiceParameter& operator=(const _type& rhs)
+	{
+		(rhs);
+	}
+
+	_type m_default;
+
+	svctl::tstring m_name;
+
+	HKEY m_key;
+
+protected:
+
+private:
+
+	ServiceParameter(const ServiceParameter&)=delete;
+	ServiceParameter& operator=(const ServiceParameter&)=delete;
 };
 
 //-----------------------------------------------------------------------------

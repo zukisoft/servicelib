@@ -55,6 +55,101 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 }
 
 //-----------------------------------------------------------------------------
+// svctl::parameter
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// parameter Destructor
+
+parameter::~parameter()
+{
+	if(m_buffer) delete[] m_buffer;
+}
+
+//-----------------------------------------------------------------------------
+// parameter::Bind (private)
+//
+// Binds the parameter to the parent registry key
+//
+// Arguments:
+//
+//	key		- Parent Parameters registry key handle
+//	name	- Registry value name to bind the parameter to
+
+void parameter::Bind(HKEY key, const tchar_t* name) 
+{
+	m_parentkey = key;
+	m_name = name;
+}
+
+size_t parameter::GetValue(void* buffer, size_t length, ServiceParameterFormat* type)
+{
+	// The output buffer must be non-NULL
+	_ASSERTE(buffer != nullptr);
+	if(buffer == nullptr) throw winexception(E_POINTER);
+
+	lock critsec(m_lock);
+
+	// Copy the contained data into the output buffer
+	size_t cb = min(length, m_size);
+	memcpy_s(buffer, length, m_buffer, cb);
+
+	// Optionally return the format of the returned data to the caller
+	if(type) *type = static_cast<ServiceParameterFormat>(m_type);
+
+	return cb;				// Return number of bytes copied into the buffer
+}
+
+void parameter::Load(void)
+{
+	LSTATUS					result;				// Result from function call
+
+	lock critsec(m_lock);	
+	_ASSERTE((m_parentkey != nullptr) && (m_name.length() > 0));
+
+	if(m_parentkey == nullptr) return;			// Not bound to the registry
+	if(m_name.length() == 0) return;			// No name has been set
+
+	Reset();									// Remove currently loaded information
+
+	// Query the data type and length of the current registry value to allocate buffer
+	result = RegQueryValueEx(m_parentkey, m_name.c_str(), nullptr, &m_type, nullptr, &m_size);
+	if(result == ERROR_FILE_NOT_FOUND) return;
+	else if(result != ERROR_SUCCESS) { Reset(); throw winexception(result); }
+
+	// Allocate a buffer to hold the registry parameter value data
+	m_buffer = new uint8_t[m_size];
+	if(!m_buffer) { Reset(); throw winexception(ERROR_OUTOFMEMORY); }
+
+	// Read the registry value into the allocated parameter value buffer
+	result = RegQueryValueEx(m_parentkey, m_name.c_str(), nullptr, nullptr, m_buffer, &m_size);
+	if(result != ERROR_SUCCESS) { Reset(); throw winexception(result); }
+}
+
+void parameter::Reset(void)
+{
+	m_type = REG_NONE;
+	m_size = 0;
+	if(m_buffer) delete[] m_buffer;
+	m_buffer = nullptr;
+}
+
+//-----------------------------------------------------------------------------
+// parameter::Unbind (private)
+//
+// Unbinds the parameter from the parent registry key
+//
+// Arguments:
+//
+//	NONE
+
+void parameter::Unbind(void)
+{
+	m_parentkey = nullptr;
+	m_name.clear();
+}
+
+//-----------------------------------------------------------------------------
 // svctl::resstring
 //-----------------------------------------------------------------------------
 
@@ -156,6 +251,20 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Default for most service controls is to return ERROR_SUCCESS if it was handled
 	// and ERROR_CALL_NOT_IMPLEMENTED if no handler was present for the control
 	return (handled) ? ERROR_SUCCESS : ERROR_CALL_NOT_IMPLEMENTED;
+}
+
+//-----------------------------------------------------------------------------
+// service::IterateParameters (protected)
+//
+// Iterates over all parameters defined for the service and executes a function
+//
+// Arguments:
+//
+//	func		- Function to pass each parameter name and reference to
+
+void service::IterateParameters(std::function<void(const tstring& name, parameter& param)> func)
+{
+	// Default implementation has no parameters to iterate
 }
 
 //-----------------------------------------------------------------------------
@@ -272,11 +381,26 @@ void service::ServiceMain(int argc, tchar_t** argv)
 
 	try {
 
-		// Start the service and just wait here until it's stopped
+		// Service is starting; report SERVICE_START_PENDING
 		SetStatus(ServiceStatus::StartPending);
+
+		// Open or create the Parameters registry key for this service and bind the parameters
+		HKEY keyparams = nullptr;
+		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
+			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
+		IterateParameters([=](const tstring& name, parameter& param) { param.Bind(keyparams, name.c_str()); });
+
+		// Derived service class startup
 		OnStart(argc, argv);
+
+		// Service is now running; wait for the STOP event object to be signaled
 		SetStatus(ServiceStatus::Running);
 		WaitForSingleObject(m_stopsignal, INFINITE);
+
+		// Ubind all of the parameters and close the parameters registry key
+		// TODO: this should also be in the catch; consider SHARE_PROCESS services; this will leak
+		IterateParameters([](const tstring&, parameter& param) { param.Unbind(); });
+		RegCloseKey(keyparams);
 	}
 
 	catch(winexception& ex) { 
@@ -499,6 +623,34 @@ winexception::winexception(DWORD result) : m_code(result)
 }
 
 };	// namespace svctl
+
+//-----------------------------------------------------------------------------
+// ::DefaultParameterFormat
+//-----------------------------------------------------------------------------
+
+// Fundamental data type specializations
+template<> ServiceParameterFormat DefaultParameterFormat<bool>(void)				{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<char>(void)				{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<signed char>(void)			{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<unsigned char>(void)		{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<__wchar_t>(void)			{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<short>(void)				{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<unsigned short>(void)		{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<int>(void)					{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<unsigned int>(void)		{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<long>(void)				{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<unsigned long>(void)		{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<long long>(void)			{ return ServiceParameterFormat::QuadWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<unsigned long long>(void)	{ return ServiceParameterFormat::QuadWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<float>(void)				{ return ServiceParameterFormat::DoubleWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<double>(void)				{ return ServiceParameterFormat::QuadWord; }
+template<> ServiceParameterFormat DefaultParameterFormat<long double>(void)			{ return ServiceParameterFormat::QuadWord; }
+
+// String data type specializations
+template<> ServiceParameterFormat DefaultParameterFormat<char*>(void)				{ return ServiceParameterFormat::String; }
+template<> ServiceParameterFormat DefaultParameterFormat<wchar_t*>(void)			{ return ServiceParameterFormat::String; }
+template<> ServiceParameterFormat DefaultParameterFormat<std::string>(void)			{ return ServiceParameterFormat::String; }
+template<> ServiceParameterFormat DefaultParameterFormat<std::wstring>(void)		{ return ServiceParameterFormat::String; }
 
 //-----------------------------------------------------------------------------
 // ::ServiceTable

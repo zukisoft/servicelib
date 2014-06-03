@@ -67,7 +67,7 @@ public:
 	}
 
 	ServiceParameter<int> m_test1 = 123;
-	ServiceParameter<DWORD> m_test2;
+	ServiceParameter<uint32_t> m_test2;
 
 	void OnStart(int argc, svctl::tchar_t** argv)
 	{

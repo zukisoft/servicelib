@@ -35,6 +35,9 @@
     <ClCompile Include="servicelib.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="servicelib_params.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc">

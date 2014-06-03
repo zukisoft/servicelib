@@ -59,15 +59,7 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// parameter Destructor
-
-parameter::~parameter()
-{
-	if(m_buffer) delete[] m_buffer;
-}
-
-//-----------------------------------------------------------------------------
-// parameter::Bind (private)
+// parameter::Bind
 //
 // Binds the parameter to the parent registry key
 //
@@ -78,64 +70,85 @@ parameter::~parameter()
 
 void parameter::Bind(HKEY key, const tchar_t* name) 
 {
-	m_parentkey = key;
-	m_name = name;
-}
-
-size_t parameter::GetValue(void* buffer, size_t length, ServiceParameterFormat* type)
-{
-	// The output buffer must be non-NULL
-	_ASSERTE(buffer != nullptr);
-	if(buffer == nullptr) throw winexception(E_POINTER);
-
 	lock critsec(m_lock);
 
-	// Copy the contained data into the output buffer
-	size_t cb = min(length, m_size);
-	memcpy_s(buffer, length, m_buffer, cb);
+	m_key = key;
+	m_name = name;
 
-	// Optionally return the format of the returned data to the caller
-	if(type) *type = static_cast<ServiceParameterFormat>(m_type);
-
-	return cb;				// Return number of bytes copied into the buffer
-}
-
-void parameter::Load(void)
-{
-	LSTATUS					result;				// Result from function call
-
-	lock critsec(m_lock);	
-	_ASSERTE((m_parentkey != nullptr) && (m_name.length() > 0));
-
-	if(m_parentkey == nullptr) return;			// Not bound to the registry
-	if(m_name.length() == 0) return;			// No name has been set
-
-	Reset();									// Remove currently loaded information
-
-	// Query the data type and length of the current registry value to allocate buffer
-	result = RegQueryValueEx(m_parentkey, m_name.c_str(), nullptr, &m_type, nullptr, &m_size);
-	if(result == ERROR_FILE_NOT_FOUND) return;
-	else if(result != ERROR_SUCCESS) { Reset(); throw winexception(result); }
-
-	// Allocate a buffer to hold the registry parameter value data
-	m_buffer = new uint8_t[m_size];
-	if(!m_buffer) { Reset(); throw winexception(ERROR_OUTOFMEMORY); }
-
-	// Read the registry value into the allocated parameter value buffer
-	result = RegQueryValueEx(m_parentkey, m_name.c_str(), nullptr, nullptr, m_buffer, &m_size);
-	if(result != ERROR_SUCCESS) { Reset(); throw winexception(result); }
-}
-
-void parameter::Reset(void)
-{
-	m_type = REG_NONE;
-	m_size = 0;
-	if(m_buffer) delete[] m_buffer;
-	m_buffer = nullptr;
+	// Force an initial load of the parameter after binding
+	OnParamChange();
 }
 
 //-----------------------------------------------------------------------------
-// parameter::Unbind (private)
+// parameter::FreeValue (protected, static)
+//
+// Releases a buffer allocated with ReadValue()
+//
+// Arguments:
+//
+//	value		- Pointer to value allocated with ReadValue()
+
+void* parameter::FreeValue(void* value)
+{
+	if(value) delete[] reinterpret_cast<uint8_t*>(value);
+	return nullptr;
+}
+
+//-----------------------------------------------------------------------------
+// parameter::IsBound (protected)
+//
+// Determines if the parameter has been bound to the registry or not
+//
+// Arguments:
+//
+//	NONE
+
+bool parameter::IsBound(void) const
+{
+	lock critsec(m_lock);
+	return (m_key != nullptr);
+}
+
+//-----------------------------------------------------------------------------
+// parameter::ReadValue (private)
+//
+// Reads a named value from the registry; release with FreeValue()
+//
+// Arguments:
+//
+//	length		- Receives the length of the allocated buffer
+//	type		- Optionally receives the registry value type
+
+void* parameter::ReadValue(size_t* length, ServiceParameterFormat* type)
+{
+	DWORD valuetype = REG_NONE;
+	DWORD valuelength = 0;
+
+	lock critsec(m_lock);
+
+	if(!IsBound()) return nullptr;			// Not bound --> NULL
+
+	// Get the required length of the output buffer to hold the value
+	LSTATUS result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, nullptr, &valuelength);
+	if(result == ERROR_FILE_NOT_FOUND) return nullptr;
+	else if(result != ERROR_SUCCESS) throw winexception(result);
+
+	// Allocate the output buffer to hold the registry value
+	uint8_t* buffer = new uint8_t[valuelength];
+
+	// Query the registry again, this time getting the actual data
+	result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, buffer, &valuelength);
+	if(result != ERROR_SUCCESS) { delete[] buffer; throw winexception(result); }
+
+	// Optional output parameters -- buffer length and value type
+	if(length) *length = static_cast<size_t>(valuelength);
+	if(type) *type = static_cast<ServiceParameterFormat>(valuetype);
+
+	return buffer;
+}
+		
+//-----------------------------------------------------------------------------
+// parameter::Unbind
 //
 // Unbinds the parameter from the parent registry key
 //
@@ -145,8 +158,33 @@ void parameter::Reset(void)
 
 void parameter::Unbind(void)
 {
-	m_parentkey = nullptr;
+	lock critsec(m_lock);
+
+	m_key = nullptr;
 	m_name.clear();
+}
+
+//-----------------------------------------------------------------------------
+// parameter::WriteValue (protected)
+//
+// Writes the parameter data to the bound registry key
+//
+// Arguments:
+//
+//	buffer		- Value data buffer
+//	length		- Length of the input buffer in bytes
+//	type		- Registry value type
+
+void parameter::WriteValue(const void* buffer, size_t length, ServiceParameterFormat type)
+{
+	lock critsec(m_lock);
+
+	if(!IsBound()) return;					// Not bound
+
+	// Write the provided value data to the bound registry key as the specified type
+	LSTATUS result = RegSetValueEx(m_key, m_name.c_str(), 0, static_cast<DWORD>(type), reinterpret_cast<const BYTE*>(buffer), 
+		static_cast<DWORD>(length));
+	if(result != ERROR_SUCCESS) throw winexception(result);
 }
 
 //-----------------------------------------------------------------------------

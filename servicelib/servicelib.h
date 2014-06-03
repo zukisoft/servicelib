@@ -112,7 +112,8 @@ enum class ServiceParameterFormat
 	Binary						= REG_BINARY,
 	DoubleWord					= REG_DWORD,
 	StringArray					= REG_MULTI_SZ,
-	QuadWord					= REG_QWORD
+	QuadWord					= REG_QWORD,
+	Auto						= 255
 };
 
 // ::ServiceProcessType (Bitmask)
@@ -511,87 +512,77 @@ namespace svctl {
 	// svctl::parameter
 	//
 	// Base class for template-specific service parameters
-	// TODO: move forward declaration of service
-	class service;
 	class parameter
 	{
-	friend class service;
 	public:
 
 		// Destructor
-		virtual ~parameter();
+		virtual ~parameter()=default;
+
+		// Bind
+		//
+		// Binds the parameter to the parent key and value name
+		void Bind(HKEY key, const tchar_t* name);
+
+		// OnParamChange
+		//
+		// Invoked in response to a SERVICE_CONTROL_PARAM_CHANGE
+		virtual void OnParamChange(void) = 0;
+
+		// Unbind
+		//
+		// Unbinds the parameter
+		void Unbind(void);
 
 	protected:
 
 		// Constructor
 		parameter()=default;
 
-		// GetValue
+		// FreeValue
 		//
-		// Reads the parameter value and type
-		size_t GetValue(void* buffer, size_t length, ServiceParameterFormat* type);
+		// Releases a value allocated with ReadValueAlloc
+		static void* FreeValue(void* value);
 
-		// Name
+		// IsBound
 		//
-		// Gets the name of the bound registry value
-		__declspec(property(get=getName)) const tchar_t* Name;
-		const tchar_t* getName(void) const { return m_name.c_str(); }
+		// Determines if the parameter has been bound to the registry
+		bool IsBound(void) const;
 
-		// Size
+		// ReadValue<>
 		//
-		// Gets the size, in bytes, of the parameter value
-		__declspec(property(get=getSize)) size_t Size;
-		size_t getSize(void) const { return static_cast<size_t>(m_size); }
+		// Reads a fixed length parameter value
+		template<typename _type, ServiceParameterFormat _format> _type ReadValue(void);
 
-		// Type
+		// WriteValue
 		//
-		// Gets the expected data type for the parameter value
-		__declspec(property(get=getType)) DWORD Type;
-		DWORD getType(void) const { return m_type; }
+		// Writes the parameter value into the bound registry key
+		void WriteValue(const void* buffer, size_t length, ServiceParameterFormat type);
+
+		// m_lock
+		//
+		// Synchronization object
+		critical_section m_lock;
 
 	private:
 
 		parameter(const parameter&)=delete;
 		parameter& operator=(const parameter&)=delete;
 
-		// TODO
-		void Bind(HKEY key, const tchar_t* name);
-
-		void Load(void);
-
-		void Reset(void);
-
-		void Unbind(void);
-
-		// m_buffer
+		// ReadValue
 		//
-		// Current value of the parameter
-		uint8_t* m_buffer = nullptr;
+		// Reads the parameter value into a new heap buffer; release with FreeValue()
+		void* ReadValue(size_t* length, ServiceParameterFormat* type);
 
-		// m_lock
+		// m_key
 		//
-		// CRITICAL_SECTION synchronization object
-		critical_section m_lock;
+		// Bound registry parent key handle
+		HKEY m_key;
 
 		// m_name
 		//
 		// Bound registry value name
 		tstring m_name;
-
-		// m_parentkey
-		//
-		// Parent registry key handle
-		HKEY m_parentkey = nullptr;
-
-		// m_size
-		//
-		// Size of the value data buffer
-		DWORD m_size = 0;
-
-		// m_type
-		//
-		// Registry data type of the parameter
-		DWORD m_type = REG_NONE;
 	};
 
 	// svctl::service
@@ -858,62 +849,49 @@ private:
 //
 // Template version of svctl::parameter
 
-template <typename _type, ServiceParameterFormat _format = ServiceParameterFormat::None>
+template <typename _type, ServiceParameterFormat _format = ServiceParameterFormat::Auto>
 class ServiceParameter : public svctl::parameter
 {
 public:
 
 	// Constructors
-	ServiceParameter() { memset(&m_default, 0, sizeof(_type)); }
-	ServiceParameter(_type defvalue) : m_default(defvalue) {}
+	ServiceParameter() { memset(&m_value, 0, sizeof(_type)); }
+	ServiceParameter(_type defvalue) : m_value(defvalue) {}
 
 	// Destructor
 	virtual ~ServiceParameter()=default;
 
-	void Bind(const svctl::tchar_t* name, HKEY parentkey)
+	//
+	operator _type() const
 	{
-		(name);
-		(parentkey);
+		svctl::lock critsec(m_lock);
+		return m_value;
 	}
 
-	void Unbind(void)
-	{
-	}
-
-	// Get
-	operator _type()
-	{
-		_type val;
-		ServiceParameterFormat type;
-		size_t read = GetValue(&val, sizeof(_type), &type);
-
-		if(read != sizeof(_type)) return m_default;
-		if(_format != ServiceParameterFormat::None)
-		{
-			if(type != _format) return m_default;
-		}
-		
-		return val;
-	}
-
-	// Set
-	ServiceParameter& operator=(const _type& rhs)
-	{
-		(rhs);
-	}
-
-	_type m_default;
-
-	svctl::tstring m_name;
-
-	HKEY m_key;
-
-protected:
+	// TODO
+	//ServiceParameter& operator=(const _type& rhs)
+	//{
+	//	(rhs);
+	//}
 
 private:
 
 	ServiceParameter(const ServiceParameter&)=delete;
 	ServiceParameter& operator=(const ServiceParameter&)=delete;
+
+	// OnParamChange (svctl::parameter)
+	//
+	// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
+	virtual void OnParamChange(void)
+	{
+		svctl::lock critsec(m_lock);
+		m_value = ReadValue<_type, _format>();
+	}
+
+	// m_value
+	//
+	// Currently loaded value for the parameter
+	_type m_value;
 };
 
 //-----------------------------------------------------------------------------

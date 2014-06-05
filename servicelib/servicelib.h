@@ -585,6 +585,33 @@ namespace svctl {
 		tstring m_name;
 	};
 
+	// ReadValue<> fundamental type specializations
+	template<> bool					parameter::ReadValue<bool,					ServiceParameterFormat::Auto>(void);
+	template<> char					parameter::ReadValue<char,					ServiceParameterFormat::Auto>(void);
+	template<> signed char			parameter::ReadValue<signed char,			ServiceParameterFormat::Auto>(void);
+	template<> unsigned char		parameter::ReadValue<unsigned char,			ServiceParameterFormat::Auto>(void);
+	template<> __wchar_t			parameter::ReadValue<__wchar_t,				ServiceParameterFormat::Auto>(void);
+	template<> short				parameter::ReadValue<short,					ServiceParameterFormat::Auto>(void);
+	template<> unsigned short		parameter::ReadValue<unsigned short,		ServiceParameterFormat::Auto>(void);
+	template<> int					parameter::ReadValue<int,					ServiceParameterFormat::Auto>(void);
+	template<> unsigned int			parameter::ReadValue<unsigned int,			ServiceParameterFormat::Auto>(void);
+	template<> long					parameter::ReadValue<long,					ServiceParameterFormat::Auto>(void);
+	template<> unsigned long		parameter::ReadValue<unsigned long,			ServiceParameterFormat::Auto>(void);
+	template<> long long			parameter::ReadValue<long long,				ServiceParameterFormat::Auto>(void);
+	template<> unsigned long long	parameter::ReadValue<unsigned long long,	ServiceParameterFormat::Auto>(void);
+	template<> float				parameter::ReadValue<float,					ServiceParameterFormat::Auto>(void);
+	template<> double				parameter::ReadValue<double,				ServiceParameterFormat::Auto>(void);
+	template<> long double			parameter::ReadValue<long double,			ServiceParameterFormat::Auto>(void);
+
+	//template<> char* parameter::ReadValue<char*, ServiceParameterFormat::Auto>(void);
+	//template<> wchar_t* parameter::ReadValue<wchar_t*, ServiceParameterFormat::Auto>(void);
+	//template<> std::string parameter::ReadValue<std::string, ServiceParameterFormat::Auto>(void);
+	//template<> std::wstring parameter::ReadValue<std::wstring, ServiceParameterFormat::Auto>(void);
+
+	// parameter<bool>
+	template<> inline bool parameter::ReadValue<bool, ServiceParameterFormat::DoubleWord>(void) { return ReadValue<bool, ServiceParameterFormat::Auto>(); }
+	template<> inline bool parameter::ReadValue<bool, ServiceParameterFormat::QuadWord>(void) { return ReadValue<bool, ServiceParameterFormat::Auto>(); }
+
 	// svctl::service
 	//
 	// Primary service base class

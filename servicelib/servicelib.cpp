@@ -121,20 +121,23 @@ bool parameter::IsBound(void) const
 
 void* parameter::ReadValue(size_t* length, ServiceParameterFormat* type)
 {
-	DWORD valuetype = REG_NONE;
-	DWORD valuelength = 0;
+	DWORD			valuetype = REG_NONE;		// Type of registry value
+	DWORD			valuelength = 0;			// Length of registry value
+	uint8_t*		buffer = nullptr;			// Registry value buffer
 
 	lock critsec(m_lock);
 
 	if(!IsBound()) return nullptr;			// Not bound --> NULL
 
+	// TODO:  this needs a loop for ERROR_MORE_DATA
+
 	// Get the required length of the output buffer to hold the value
-	LSTATUS result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, nullptr, &valuelength);
+	LSTATUS result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, buffer, &valuelength);
 	if(result == ERROR_FILE_NOT_FOUND) return nullptr;
 	else if(result != ERROR_SUCCESS) throw winexception(result);
 
 	// Allocate the output buffer to hold the registry value
-	uint8_t* buffer = new uint8_t[valuelength];
+	buffer = new uint8_t[valuelength];
 
 	// Query the registry again, this time getting the actual data
 	result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, buffer, &valuelength);

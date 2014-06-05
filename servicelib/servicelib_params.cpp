@@ -9,13 +9,28 @@ namespace svctl {
 	// bool
 	template<> bool parameter::ReadValue<bool, ServiceParameterFormat::Auto>(void)
 	{
-		return ReadValue<bool, ServiceParameterFormat::DoubleWord>();
+		size_t length;
+		ServiceParameterFormat type;
+		void* data = ReadValue(&length, &type);
+		if(!data) return false;
+
+		switch(type) {
+			case ServiceParameterFormat::Binary:
+			case ServiceParameterFormat::DoubleWord:
+			case ServiceParameterFormat::ExpandString:
+			case ServiceParameterFormat::QuadWord:
+			case ServiceParameterFormat::String:
+			case ServiceParameterFormat::StringArray:
+			default:
+				return false;
+		}
 	}
 
 	//template<> bool parameter::ReadValue<bool, ServiceParameterFormat::DoubleWord>(void)
 	//{
-		//return ReadValue<unsigned int, ServiceParameterFormat::DoubleWord>() != 0;
-		//return false;
+	//	return ReadValue<bool, ServiceParameterFormat::Auto>();
+	//	//return ReadValue<unsigned int, ServiceParameterFormat::DoubleWord>() != 0;
+	//	//return false;
 	//}
 
 	template<> int parameter::ReadValue<int, ServiceParameterFormat::Auto>(void)

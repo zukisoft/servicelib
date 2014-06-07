@@ -119,11 +119,28 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	MyService svc;
-	svc.BindParameters();
+	//MyService svc;
+	//svc.BindParameters();
 
-	MyService svc2;
-	svc2.BindParameters();
+	//MyService svc2;
+	//svc2.BindParameters();
+
+	HKEY hkey;
+	DWORD result = RegCreateKeyEx(HKEY_CURRENT_USER, L"Mike", 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkey, nullptr);
+
+	double test = 123.45;
+	float test2 = static_cast<float>(test);
+	unsigned long long t = *reinterpret_cast<unsigned long long*>(&test);
+
+	ServiceParameter<float> myval;
+	myval.Bind(hkey, L"TestUnsignedLong");
+	myval.OnParamChange();
+
+	float val = myval;
+
+	//bool b = static_cast<bool>(val);
+
+	RegCloseKey(hkey);
 
 	return 0;
 

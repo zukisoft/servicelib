@@ -101,21 +101,6 @@ enum class ServiceErrorControl
 	Critical					= SERVICE_ERROR_CRITICAL,
 };
 
-// ::ServiceParameterFormat
-//
-// Strongly typed enumeration of REG_XXXX constants
-enum class ServiceParameterFormat
-{
-	None						= REG_NONE,
-	String						= REG_SZ,
-	ExpandString				= REG_EXPAND_SZ,
-	Binary						= REG_BINARY,
-	DoubleWord					= REG_DWORD,
-	StringArray					= REG_MULTI_SZ,
-	QuadWord					= REG_QWORD,
-	Auto						= 255
-};
-
 // ::ServiceProcessType (Bitmask)
 //
 // Strongly typed enumeration of service process type flags
@@ -509,6 +494,12 @@ namespace svctl {
 		LPSERVICE_MAIN_FUNCTION m_servicemain;
 	};
 
+	// svctl::parameter_convert
+	//
+	// Specifies a registry value conversion function
+	template<typename _type>
+	using parameter_convert = _type(*)(void*, size_t, DWORD);
+
 	// svctl::parameter
 	//
 	// Base class for template-specific service parameters
@@ -539,10 +530,10 @@ namespace svctl {
 		// Constructor
 		parameter()=default;
 
-		// FreeValue
+		// FreeRawValue
 		//
 		// Releases a value allocated with ReadValueAlloc
-		static void* FreeValue(void* value);
+		static void* FreeRawValue(void* value);
 
 		// IsBound
 		//
@@ -551,13 +542,8 @@ namespace svctl {
 
 		// ReadValue<>
 		//
-		// Reads a fixed length parameter value
-		template<typename _type, ServiceParameterFormat _format> _type ReadValue(void);
-
-		// WriteValue
-		//
-		// Writes the parameter value into the bound registry key
-		void WriteValue(const void* buffer, size_t length, ServiceParameterFormat type);
+		// Reads a parameter value
+		template<typename _type> _type ReadValue(void);
 
 		// m_lock
 		//
@@ -569,10 +555,26 @@ namespace svctl {
 		parameter(const parameter&)=delete;
 		parameter& operator=(const parameter&)=delete;
 
-		// ReadValue
+		// ReadFundamentalValue
+		//
+		// Reads the value of an integral type parameter
+		template <typename _type, parameter_convert<_type> _from_binary, parameter_convert<_type> _from_string>
+		_type ReadFundamentalValue(void);
+
+		// ReadMultiStringValue
+		//
+		// TODO
+
+		// ReadStringValue
+		//
+		// TODO
+
+
+
+		// ReadRawValue
 		//
 		// Reads the parameter value into a new heap buffer; release with FreeValue()
-		void* ReadValue(size_t* length, ServiceParameterFormat* type);
+		void* ReadRawValue(size_t* length, DWORD* type);
 
 		// m_key
 		//
@@ -586,31 +588,30 @@ namespace svctl {
 	};
 
 	// ReadValue<> fundamental type specializations
-	template<> bool					parameter::ReadValue<bool,					ServiceParameterFormat::Auto>(void);
-	template<> char					parameter::ReadValue<char,					ServiceParameterFormat::Auto>(void);
-	template<> signed char			parameter::ReadValue<signed char,			ServiceParameterFormat::Auto>(void);
-	template<> unsigned char		parameter::ReadValue<unsigned char,			ServiceParameterFormat::Auto>(void);
-	template<> __wchar_t			parameter::ReadValue<__wchar_t,				ServiceParameterFormat::Auto>(void);
-	template<> short				parameter::ReadValue<short,					ServiceParameterFormat::Auto>(void);
-	template<> unsigned short		parameter::ReadValue<unsigned short,		ServiceParameterFormat::Auto>(void);
-	template<> int					parameter::ReadValue<int,					ServiceParameterFormat::Auto>(void);
-	template<> unsigned int			parameter::ReadValue<unsigned int,			ServiceParameterFormat::Auto>(void);
-	template<> long					parameter::ReadValue<long,					ServiceParameterFormat::Auto>(void);
-	template<> unsigned long		parameter::ReadValue<unsigned long,			ServiceParameterFormat::Auto>(void);
-	template<> long long			parameter::ReadValue<long long,				ServiceParameterFormat::Auto>(void);
-	template<> unsigned long long	parameter::ReadValue<unsigned long long,	ServiceParameterFormat::Auto>(void);
-	template<> float				parameter::ReadValue<float,					ServiceParameterFormat::Auto>(void);
-	template<> double				parameter::ReadValue<double,				ServiceParameterFormat::Auto>(void);
-	template<> long double			parameter::ReadValue<long double,			ServiceParameterFormat::Auto>(void);
+	//
+	template<> bool					parameter::ReadValue<bool>(void);
+	template<> char					parameter::ReadValue<char>(void);
+	template<> signed char			parameter::ReadValue<signed char>(void);
+	template<> unsigned char		parameter::ReadValue<unsigned char>(void);
+	template<> __wchar_t			parameter::ReadValue<__wchar_t>(void);
+	template<> short				parameter::ReadValue<short>(void);
+	template<> unsigned short		parameter::ReadValue<unsigned short>(void);
+	template<> int					parameter::ReadValue<int>(void);
+	template<> unsigned int			parameter::ReadValue<unsigned int>(void);
+	template<> long					parameter::ReadValue<long>(void);
+	template<> unsigned long		parameter::ReadValue<unsigned long>(void);
+	template<> long long			parameter::ReadValue<long long>(void);
+	template<> unsigned long long	parameter::ReadValue<unsigned long long>(void);
+	template<> float				parameter::ReadValue<float>(void);
+	template<> double				parameter::ReadValue<double>(void);
+	template<> long double			parameter::ReadValue<long double>(void);
 
+	// ReadValue<> string type specializations
+	//
 	//template<> char* parameter::ReadValue<char*, ServiceParameterFormat::Auto>(void);
 	//template<> wchar_t* parameter::ReadValue<wchar_t*, ServiceParameterFormat::Auto>(void);
 	//template<> std::string parameter::ReadValue<std::string, ServiceParameterFormat::Auto>(void);
 	//template<> std::wstring parameter::ReadValue<std::wstring, ServiceParameterFormat::Auto>(void);
-
-	// parameter<bool>
-	template<> inline bool parameter::ReadValue<bool, ServiceParameterFormat::DoubleWord>(void) { return ReadValue<bool, ServiceParameterFormat::Auto>(); }
-	template<> inline bool parameter::ReadValue<bool, ServiceParameterFormat::QuadWord>(void) { return ReadValue<bool, ServiceParameterFormat::Auto>(); }
 
 	// svctl::service
 	//
@@ -768,22 +769,6 @@ namespace svctl {
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// ::DefaultParameterFormat<>
-//
-// Function used to determine what underlying registry value format should be
-// used to read/write a ServiceParameter by default.  Specializations exist for
-// all compiler fundamental types (char, int, long, etc) as well as string
-// types (char*, wchar_t*, etc) in the servicelib.cpp file
-
-template<typename _type>
-ServiceParameterFormat DefaultParameterFormat(void)
-{ 
-	// The default format is REG_BINARY to allow for persistence of any type
-	// that does not have a matching specialization of this function
-	return ServiceParameterFormat::Binary;
-}
-
-//-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
 //
 // Specialization of the svctl::control_handler class that allows the derived
@@ -876,7 +861,7 @@ private:
 //
 // Template version of svctl::parameter
 
-template <typename _type, ServiceParameterFormat _format = ServiceParameterFormat::Auto>
+template <typename _type>
 class ServiceParameter : public svctl::parameter
 {
 public:
@@ -909,10 +894,11 @@ private:
 	// OnParamChange (svctl::parameter)
 	//
 	// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
+public: // TODO REMOVE THIS
 	virtual void OnParamChange(void)
 	{
 		svctl::lock critsec(m_lock);
-		m_value = ReadValue<_type, _format>();
+		m_value = ReadValue<_type>();
 	}
 
 	// m_value

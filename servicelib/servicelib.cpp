@@ -80,7 +80,7 @@ void parameter::Bind(HKEY key, const tchar_t* name)
 }
 
 //-----------------------------------------------------------------------------
-// parameter::FreeValue (protected, static)
+// parameter::FreeRawValue (protected, static)
 //
 // Releases a buffer allocated with ReadValue()
 //
@@ -88,7 +88,7 @@ void parameter::Bind(HKEY key, const tchar_t* name)
 //
 //	value		- Pointer to value allocated with ReadValue()
 
-void* parameter::FreeValue(void* value)
+void* parameter::FreeRawValue(void* value)
 {
 	if(value) delete[] reinterpret_cast<uint8_t*>(value);
 	return nullptr;
@@ -110,16 +110,16 @@ bool parameter::IsBound(void) const
 }
 
 //-----------------------------------------------------------------------------
-// parameter::ReadValue (private)
+// parameter::ReadRawValue (private)
 //
-// Reads a named value from the registry; release with FreeValue()
+// Reads a named value from the registry; release with FreeRawValue()
 //
 // Arguments:
 //
 //	length		- Receives the length of the allocated buffer
 //	type		- Optionally receives the registry value type
 
-void* parameter::ReadValue(size_t* length, ServiceParameterFormat* type)
+void* parameter::ReadRawValue(size_t* length, DWORD* type)
 {
 	DWORD			valuetype = REG_NONE;		// Type of registry value
 	DWORD			valuelength = 0;			// Length of registry value
@@ -136,6 +136,9 @@ void* parameter::ReadValue(size_t* length, ServiceParameterFormat* type)
 	if(result == ERROR_FILE_NOT_FOUND) return nullptr;
 	else if(result != ERROR_SUCCESS) throw winexception(result);
 
+	// TODO: Add extra NULL for REG_SZ / EXPAND_SZ, or three NULLs for MULTI_SZ here
+	// to the buffer to ensure termination, also memset it to zero
+
 	// Allocate the output buffer to hold the registry value
 	buffer = new uint8_t[valuelength];
 
@@ -145,7 +148,7 @@ void* parameter::ReadValue(size_t* length, ServiceParameterFormat* type)
 
 	// Optional output parameters -- buffer length and value type
 	if(length) *length = static_cast<size_t>(valuelength);
-	if(type) *type = static_cast<ServiceParameterFormat>(valuetype);
+	if(type) *type = valuetype;
 
 	return buffer;
 }
@@ -165,29 +168,6 @@ void parameter::Unbind(void)
 
 	m_key = nullptr;
 	m_name.clear();
-}
-
-//-----------------------------------------------------------------------------
-// parameter::WriteValue (protected)
-//
-// Writes the parameter data to the bound registry key
-//
-// Arguments:
-//
-//	buffer		- Value data buffer
-//	length		- Length of the input buffer in bytes
-//	type		- Registry value type
-
-void parameter::WriteValue(const void* buffer, size_t length, ServiceParameterFormat type)
-{
-	lock critsec(m_lock);
-
-	if(!IsBound()) return;					// Not bound
-
-	// Write the provided value data to the bound registry key as the specified type
-	LSTATUS result = RegSetValueEx(m_key, m_name.c_str(), 0, static_cast<DWORD>(type), reinterpret_cast<const BYTE*>(buffer), 
-		static_cast<DWORD>(length));
-	if(result != ERROR_SUCCESS) throw winexception(result);
 }
 
 //-----------------------------------------------------------------------------
@@ -664,34 +644,6 @@ winexception::winexception(DWORD result) : m_code(result)
 }
 
 };	// namespace svctl
-
-//-----------------------------------------------------------------------------
-// ::DefaultParameterFormat
-//-----------------------------------------------------------------------------
-
-// Fundamental data type specializations
-template<> ServiceParameterFormat DefaultParameterFormat<bool>(void)				{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<char>(void)				{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<signed char>(void)			{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<unsigned char>(void)		{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<__wchar_t>(void)			{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<short>(void)				{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<unsigned short>(void)		{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<int>(void)					{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<unsigned int>(void)		{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<long>(void)				{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<unsigned long>(void)		{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<long long>(void)			{ return ServiceParameterFormat::QuadWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<unsigned long long>(void)	{ return ServiceParameterFormat::QuadWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<float>(void)				{ return ServiceParameterFormat::DoubleWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<double>(void)				{ return ServiceParameterFormat::QuadWord; }
-template<> ServiceParameterFormat DefaultParameterFormat<long double>(void)			{ return ServiceParameterFormat::QuadWord; }
-
-// String data type specializations
-template<> ServiceParameterFormat DefaultParameterFormat<char*>(void)				{ return ServiceParameterFormat::String; }
-template<> ServiceParameterFormat DefaultParameterFormat<wchar_t*>(void)			{ return ServiceParameterFormat::String; }
-template<> ServiceParameterFormat DefaultParameterFormat<std::string>(void)			{ return ServiceParameterFormat::String; }
-template<> ServiceParameterFormat DefaultParameterFormat<std::wstring>(void)		{ return ServiceParameterFormat::String; }
 
 //-----------------------------------------------------------------------------
 // ::ServiceTable

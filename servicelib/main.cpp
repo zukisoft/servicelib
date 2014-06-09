@@ -138,6 +138,9 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 	float val = myval;
 
+	unsigned long long sc;
+	sscanf_s("0x123456", "%lli", &sc);
+
 	//bool b = static_cast<bool>(val);
 
 	RegCloseKey(hkey);

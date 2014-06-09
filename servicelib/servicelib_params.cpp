@@ -6,6 +6,78 @@
 
 namespace svctl {
 
+	// svctl::parameter_format_string
+	//
+	template <typename _test, typename _type>
+	using parameter_format_string = typename std::enable_if<std::is_same<_type, _test>::value, const tchar_t*>::type;
+
+	// svctl::ParameterFormatString
+	//
+	// Defines the format string that is passed to sscanf_s() to convert a registry string into a fundamental type.
+	// Uses compile-time enable_if<> to ensure that any missing formats will generate a compile-time error
+
+#ifdef _UNICODE
+	template <typename _type> parameter_format_string<_type, char>				ParameterFormatString(void) { return _T("%C"); }
+	template <typename _type> parameter_format_string<_type, __wchar_t>			ParameterFormatString(void) { return _T("%c"); }
+#else
+	template <typename _type> parameter_format_string<_type, char>				ParameterFormatString(void) { return _T("%c"); }
+	template <typename _type> parameter_format_string<_type, __wchar_t>			ParameterFormatString(void) { return _T("%C"); }
+#endif
+
+	template <typename _type> parameter_format_string<_type, signed char>		ParameterFormatString(void) { return _T("%hi"); }	// TODO: could overflow
+	template <typename _type> parameter_format_string<_type, unsigned char>		ParameterFormatString(void) { return _T("%hu"); }	// TODO: could overflow
+	template <typename _type> parameter_format_string<_type, short>				ParameterFormatString(void) { return _T("%hi"); }
+	template <typename _type> parameter_format_string<_type, unsigned short>	ParameterFormatString(void) { return _T("%hu"); }
+	template <typename _type> parameter_format_string<_type, int>				ParameterFormatString(void) { return _T("%i"); }
+	template <typename _type> parameter_format_string<_type, unsigned int>		ParameterFormatString(void) { return _T("%u"); }
+	template <typename _type> parameter_format_string<_type, long>				ParameterFormatString(void) { return _T("%li"); }
+	template <typename _type> parameter_format_string<_type, unsigned long>		ParameterFormatString(void) { return _T("%lu"); }
+	template <typename _type> parameter_format_string<_type, long long>			ParameterFormatString(void) { return _T("%lli"); }
+	template <typename _type> parameter_format_string<_type, float>				ParameterFormatString(void) { return _T("%f"); }
+	template <typename _type> parameter_format_string<_type, double>			ParameterFormatString(void) { return _T("%d"); }
+	template <typename _type> parameter_format_string<_type, long double>		ParameterFormatString(void) { return _T("%ld"); }
+
+	template <typename _type>
+	typename std::enable_if<std::is_integral<_type>::value, _type>::type
+	ConvertParameter(void *raw, size_t length, DWORD type)
+	{
+		const tchar_t* format = ParameterFormatString<_type>();
+	}
+
+	//template <typename _type>
+	//typename std::enable_if<std::is_fundamental<_type>::value, _type>::type
+	//RegStringToFundamental(void* raw, size_t length, DWORD type, const tchar_t* scanformat)
+	//{
+	//	// converts a string into a fundamental type
+	//}
+
+	template<typename _type>
+	typename std::enable_if<std::is_integral<_type>::value, _type>::type
+	ConvertRegistryValue(void* raw, size_t length, DWORD type, const tchar_t* scanformat)
+	{
+		if(type == REG_BINARY || type == REG_DWORD || type == REG_QWORD) {
+
+			if(length >= sizeof(double)) return static_cast<_type>(*reinterpret_cast<double*>(raw));
+			else if(length >= sizeof(float)) return static_cast<_type>(*reinterpret_cast<float*>(raw));
+			else return static_cast<_type>(0);
+		}
+
+		else if(type == REG_SZ || type == REG_EXPAND_SZ) {
+
+			return RegStringToFundamental<_type>(raw, length, type, scanformat);
+		}
+
+		else return static_cast<_type>(0);
+	}
+
+	template<typename _type>
+	typename std::enable_if<std::is_floating_point<_type>::value, _type>::type
+	ConvertRegistryValue(void* raw, size_t length, DWORD type, const tchar_t* scanformat)
+	{
+		return static_cast<_type>(0);
+	}
+
+
 	// svctl::RegBinaryToFloat
 	//
 	// Converts a raw registry value into a floating point fundamental type
@@ -72,6 +144,24 @@ namespace svctl {
 		return value;
 	}
 
+	template <typename _type>
+	_type RegStringFormat(void* raw, size_t length, DWORD type, const tchar_t* format)
+	{
+		_type value = static_cast<_type>(0);			// Assume failure --> zero
+
+		// TODO : DEAL WITH REG_EXPAND_SZ FIRST
+		(type);
+
+		// Use sscanf_s to attempt to convert the string into the value type
+		_stscanf_s(reinterpret_cast<tchar_t*>(raw), format, &value, length);
+
+		return value;
+	}
+
+	template <typename _type> _type RegStringTest(void*, size_t, DWORD);
+
+	template<> double RegStringTest<double>(void* raw, size_t length, DWORD type) { return RegStringFormat<double>(raw, length, type, _T("%d")); }
+
 	//-------------------------------------------------------------------------
 	// parameter::ReadFundamentalValue (private)
 	//
@@ -89,7 +179,7 @@ namespace svctl {
 		
 		_type value = static_cast<_type>(0);		// Resultant parameter value
 
-		// Read the raw registry value, length and type information from the registry
+		// Read the raw registry value, length and type information
 		void* raw = ReadRawValue(&rawlength, &rawtype);
 		if(!raw) return value;
 
@@ -112,7 +202,70 @@ namespace svctl {
 		FreeRawValue(raw);							// Release the allocated buffer
 		return value;								// Return the copy of the value
 	}
-	
+
+	/// NEW
+	template <typename _type>
+	_type parameter::ReadFundamental(const tchar_t* scanformat)
+	{
+		// Verify that this has been specified for a fundamental non-pointer data type only
+		static_assert(std::is_fundamental<_type>::value == true, "parameter::ReadFundamental<> cannot be used with a non-fundamental data type");
+		static_assert(std::is_pointer<_type>::value == false, "parameter::ReadFundamental<> cannot be used with a pointer data type");
+
+		size_t				rawlength;				// Length of the raw registry value
+		DWORD				rawtype;				// Type/format of the raw registry value
+		
+		_type value = static_cast<_type>(0);		// Resultant parameter value
+
+		// Read the raw registry value, length and type information from the registry
+		void* raw = ReadRawValue(&rawlength, &rawtype);
+		if(!raw) return value;
+
+		///
+		if((rawtype == REG_BINARY) || (rawtype == REG_DWORD) || (rawtype == REG_QWORD)) {
+
+			// INTEGER
+			if(std::is_arithmetic<_type>::value) {
+
+				if(rawlength >= sizeof(unsigned long long)) value = static_cast<_type>(*reinterpret_cast<unsigned long long*>(raw));
+				else if(rawlength >= sizeof(unsigned long)) value = static_cast<_type>(*reinterpret_cast<unsigned long*>(raw));
+				else if(rawlength >= sizeof(unsigned short)) value = static_cast<_type>(*reinterpret_cast<unsigned short*>(raw));
+				else if(rawlength >= sizeof(unsigned char)) value = static_cast<_type>(*reinterpret_cast<unsigned char*>(raw));
+			}
+
+			// FLOATING POINT
+			else if(std::is_floating_point<_type>::value) {
+
+				if(rawlength >= sizeof(double)) value = static_cast<_type>(*reinterpret_cast<double*>(raw));
+				else if(rawlength >= sizeof(float)) value = static_cast<_type>(*reinterpret_cast<float*>(raw));
+			}
+
+			// OTHER
+			else if(rawlength >= sizeof(_type)) value = static_cast<_type>(*reinterpret_cast<_type*>(raw));
+		}
+
+		///
+		else if(rawtype == REG_EXPAND_SZ) {
+
+			DWORD required = ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(raw), nullptr, 0);
+			tchar_t* temp = new tchar_t[required];
+			if(temp) {
+
+				DWORD result = ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(raw), temp, required);
+				if(result) _stscanf_s(temp, scanformat, &value, result);
+				delete[] temp;
+			}
+
+		}
+
+		///
+		else if(rawtype == REG_SZ) {
+
+			_stscanf_s(reinterpret_cast<tchar_t*>(raw), scanformat, &value, rawlength);
+		}
+
+		FreeRawValue(raw);							// Release the allocated buffer
+		return value;								// Return the copy of the value
+	}
 
 	// bool
 	//
@@ -143,9 +296,12 @@ namespace svctl {
 	template<> unsigned long long parameter::ReadValue<unsigned long long>(void) { return ReadFundamentalValue<unsigned long long, RegBinaryToInteger, RegStringToFundamental<unsigned long long, 'u'>>(); }
 
 	// float / double / long double
-	template<> float parameter::ReadValue<float>(void) { return ReadFundamentalValue<float, RegBinaryToFloat, RegStringToFundamental<float, 'f'>>(); }
-	template<> double parameter::ReadValue<double>(void) { return ReadFundamentalValue<double, RegBinaryToFloat, RegStringToFundamental<double, 'd'>>(); }
-	template<> long double parameter::ReadValue<long double>(void) { return ReadFundamentalValue<long double, RegBinaryToFloat, RegStringToFundamental<long double, 'd'>>(); }
+	//template<> float parameter::ReadValue<float>(void) { return ReadFundamentalValue<float, RegBinaryToFloat, RegStringToFundamental<float, 'f'>>(); }
+	//template<> double parameter::ReadValue<double>(void) { return ReadFundamentalValue<double, RegBinaryToFloat, RegStringTest>(); }
+	//template<> long double parameter::ReadValue<long double>(void) { return ReadFundamentalValue<long double, RegBinaryToFloat, RegStringToFundamental<long double, 'd'>>(); }
+	template<> float		parameter::ReadValue<float>(void)		{ return ReadFundamental<float>(_T("%f")); }
+	template<> double		parameter::ReadValue<double>(void)		{ return ReadFundamental<double>(_T("%d")); }
+	template<> long double	parameter::ReadValue<long double>(void)	{ return ReadFundamental<long double>(_T("%ld")); }
 
 	// char* - don't do?
 

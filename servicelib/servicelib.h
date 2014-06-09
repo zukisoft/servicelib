@@ -555,6 +555,9 @@ namespace svctl {
 		parameter(const parameter&)=delete;
 		parameter& operator=(const parameter&)=delete;
 
+		template <typename _type>
+		_type ReadFundamental(const tchar_t* scanformat);
+
 		// ReadFundamentalValue
 		//
 		// Reads the value of an integral type parameter

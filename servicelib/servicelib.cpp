@@ -80,21 +80,6 @@ void parameter::Bind(HKEY key, const tchar_t* name)
 }
 
 //-----------------------------------------------------------------------------
-// parameter::FreeRawValue (protected, static)
-//
-// Releases a buffer allocated with ReadValue()
-//
-// Arguments:
-//
-//	value		- Pointer to value allocated with ReadValue()
-
-void* parameter::FreeRawValue(void* value)
-{
-	if(value) delete[] reinterpret_cast<uint8_t*>(value);
-	return nullptr;
-}
-
-//-----------------------------------------------------------------------------
 // parameter::IsBound (protected)
 //
 // Determines if the parameter has been bound to the registry or not
@@ -106,53 +91,10 @@ void* parameter::FreeRawValue(void* value)
 bool parameter::IsBound(void) const
 {
 	lock critsec(m_lock);
+
 	return (m_key != nullptr);
 }
 
-//-----------------------------------------------------------------------------
-// parameter::ReadRawValue (private)
-//
-// Reads a named value from the registry; release with FreeRawValue()
-//
-// Arguments:
-//
-//	length		- Receives the length of the allocated buffer
-//	type		- Optionally receives the registry value type
-
-void* parameter::ReadRawValue(size_t* length, DWORD* type)
-{
-	DWORD			valuetype = REG_NONE;		// Type of registry value
-	DWORD			valuelength = 0;			// Length of registry value
-	uint8_t*		buffer = nullptr;			// Registry value buffer
-
-	lock critsec(m_lock);
-
-	if(!IsBound()) return nullptr;			// Not bound --> NULL
-
-	// TODO:  this needs a loop for ERROR_MORE_DATA
-
-	// Get the required length of the output buffer to hold the value
-	LSTATUS result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, buffer, &valuelength);
-	if(result == ERROR_FILE_NOT_FOUND) return nullptr;
-	else if(result != ERROR_SUCCESS) throw winexception(result);
-
-	// TODO: Add extra NULL for REG_SZ / EXPAND_SZ, or three NULLs for MULTI_SZ here
-	// to the buffer to ensure termination, also memset it to zero
-
-	// Allocate the output buffer to hold the registry value
-	buffer = new uint8_t[valuelength];
-
-	// Query the registry again, this time getting the actual data
-	result = RegQueryValueEx(m_key, m_name.c_str(), nullptr, &valuetype, buffer, &valuelength);
-	if(result != ERROR_SUCCESS) { delete[] buffer; throw winexception(result); }
-
-	// Optional output parameters -- buffer length and value type
-	if(length) *length = static_cast<size_t>(valuelength);
-	if(type) *type = valuetype;
-
-	return buffer;
-}
-		
 //-----------------------------------------------------------------------------
 // parameter::Unbind
 //
@@ -168,6 +110,63 @@ void parameter::Unbind(void)
 
 	m_key = nullptr;
 	m_name.clear();
+}
+
+//-----------------------------------------------------------------------------
+// svctl::registry_value
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// registry_value Constructor
+//
+// Arguments:
+//
+//	key			- Parent registry key handle
+//	name		- Name of the registry value to load
+
+registry_value::registry_value(HKEY key, const tchar_t* name)
+{
+	// Get the required length of the output buffer to hold the value
+	LSTATUS result = RegQueryValueEx(key, name, nullptr, &m_type, m_data, &m_length);
+	if(result == ERROR_FILE_NOT_FOUND) return;
+	else if(result != ERROR_SUCCESS) throw winexception(result);
+
+	// Allocate the output buffer to hold the registry value
+	m_data = new uint8_t[m_length];
+
+	// Query the registry again, this time getting the actual data
+	result = RegQueryValueEx(key, name, nullptr, &m_type, m_data, &m_length);
+	if(result != ERROR_SUCCESS) { delete[] m_data; throw winexception(result); }
+
+	// REG_EXPAND_SZ may contain expandable strings, do that automtically and change
+	// cthe type to REG_SZ so the parameter class doesn't need to care about this
+	if(m_type == REG_EXPAND_SZ) {
+
+		DWORD required = ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(m_data), nullptr, 0);
+		if(required) {
+
+			// Allocate a temporary heap buffer and attempt to expand the environment strings into it
+			uint8_t* temp = new uint8_t[required];
+			if(ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(m_data), reinterpret_cast<tchar_t*>(temp), required)) {
+
+				delete[] m_data;				// Release the previous raw data
+				m_data = temp;					// Replace with the new raw data
+				m_length = required;			// Replace with the new raw data length
+				m_type = REG_SZ;				// Value is now a regular REG_SZ string
+			}
+				
+			else delete[] temp;					// Failed -- just release the temporary buffer
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+// registry_value Destructor
+
+registry_value::~registry_value()
+{
+	// Release the contained raw data, if it was ever allocated
+	if(m_data) delete[] m_data;
 }
 
 //-----------------------------------------------------------------------------

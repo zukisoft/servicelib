@@ -326,6 +326,56 @@ namespace svctl {
 		bool m_locked;
 	};
 
+	// svctl::registry_value
+	//
+	// Reads a single raw value from the system registry
+	class registry_value
+	{
+	public:
+
+		// Constructor / Destructor
+		registry_value(HKEY key, const tchar_t* name);
+		~registry_value();
+
+		// Data
+		//
+		// Gets a pointer to the raw registry value data
+		__declspec(property(get=getData)) void* Data;
+		void* getData(void) const { return m_data; }
+
+		// Length
+		//
+		// Gets the length of the raw registry value data
+		__declspec(property(get=getLength)) DWORD Length;
+		DWORD getLength(void) const { return m_length; }
+
+		// Type
+		//
+		// Gets the type of the raw registry value data
+		__declspec(property(get=getType)) DWORD Type;
+		DWORD getType(void) const { return m_type; }
+
+	private:
+
+		registry_value(const registry_value&)=delete;
+		registry_value& operator=(const registry_value&)=delete;
+
+		// m_data
+		//
+		// Pointer to the raw registry value data
+		uint8_t* m_data = nullptr;
+
+		// m_length
+		//
+		// Length of the raw registry value data
+		DWORD m_length = 0;
+
+		// m_type
+		//
+		// Type of the raw registry value data
+		DWORD m_type = REG_NONE;
+	};
+
 	// svctl::resstring
 	//
 	// Implements a tstring loaded from the module's string table
@@ -494,12 +544,6 @@ namespace svctl {
 		LPSERVICE_MAIN_FUNCTION m_servicemain;
 	};
 
-	// svctl::parameter_convert
-	//
-	// Specifies a registry value conversion function
-	template<typename _type>
-	using parameter_convert = _type(*)(void*, size_t, DWORD);
-
 	// svctl::parameter
 	//
 	// Base class for template-specific service parameters
@@ -530,20 +574,16 @@ namespace svctl {
 		// Constructor
 		parameter()=default;
 
-		// FreeRawValue
-		//
-		// Releases a value allocated with ReadValueAlloc
-		static void* FreeRawValue(void* value);
-
 		// IsBound
 		//
 		// Determines if the parameter has been bound to the registry
 		bool IsBound(void) const;
 
-		// ReadValue<>
+		// ReadValue
 		//
-		// Reads a parameter value
-		template<typename _type> _type ReadValue(void);
+		// Reads the current value from the bound registry key
+		template <typename _type>
+		_type ReadValue(void);
 
 		// m_lock
 		//
@@ -555,66 +595,16 @@ namespace svctl {
 		parameter(const parameter&)=delete;
 		parameter& operator=(const parameter&)=delete;
 
-		template <typename _type>
-		_type ReadFundamental(const tchar_t* scanformat);
-
-		// ReadFundamentalValue
-		//
-		// Reads the value of an integral type parameter
-		template <typename _type, parameter_convert<_type> _from_binary, parameter_convert<_type> _from_string>
-		_type ReadFundamentalValue(void);
-
-		// ReadMultiStringValue
-		//
-		// TODO
-
-		// ReadStringValue
-		//
-		// TODO
-
-
-
-		// ReadRawValue
-		//
-		// Reads the parameter value into a new heap buffer; release with FreeValue()
-		void* ReadRawValue(size_t* length, DWORD* type);
-
 		// m_key
 		//
 		// Bound registry parent key handle
-		HKEY m_key;
+		HKEY m_key = nullptr;
 
 		// m_name
 		//
 		// Bound registry value name
 		tstring m_name;
 	};
-
-	// ReadValue<> fundamental type specializations
-	//
-	template<> bool					parameter::ReadValue<bool>(void);
-	template<> char					parameter::ReadValue<char>(void);
-	template<> signed char			parameter::ReadValue<signed char>(void);
-	template<> unsigned char		parameter::ReadValue<unsigned char>(void);
-	template<> __wchar_t			parameter::ReadValue<__wchar_t>(void);
-	template<> short				parameter::ReadValue<short>(void);
-	template<> unsigned short		parameter::ReadValue<unsigned short>(void);
-	template<> int					parameter::ReadValue<int>(void);
-	template<> unsigned int			parameter::ReadValue<unsigned int>(void);
-	template<> long					parameter::ReadValue<long>(void);
-	template<> unsigned long		parameter::ReadValue<unsigned long>(void);
-	template<> long long			parameter::ReadValue<long long>(void);
-	template<> unsigned long long	parameter::ReadValue<unsigned long long>(void);
-	template<> float				parameter::ReadValue<float>(void);
-	template<> double				parameter::ReadValue<double>(void);
-	template<> long double			parameter::ReadValue<long double>(void);
-
-	// ReadValue<> string type specializations
-	//
-	//template<> char* parameter::ReadValue<char*, ServiceParameterFormat::Auto>(void);
-	//template<> wchar_t* parameter::ReadValue<wchar_t*, ServiceParameterFormat::Auto>(void);
-	//template<> std::string parameter::ReadValue<std::string, ServiceParameterFormat::Auto>(void);
-	//template<> std::wstring parameter::ReadValue<std::wstring, ServiceParameterFormat::Auto>(void);
 
 	// svctl::service
 	//
@@ -883,12 +873,6 @@ public:
 		return m_value;
 	}
 
-	// TODO
-	//ServiceParameter& operator=(const _type& rhs)
-	//{
-	//	(rhs);
-	//}
-
 private:
 
 	ServiceParameter(const ServiceParameter&)=delete;
@@ -897,11 +881,11 @@ private:
 	// OnParamChange (svctl::parameter)
 	//
 	// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
-public: // TODO REMOVE THIS
+public: // <--- TODO REMOVE THIS
 	virtual void OnParamChange(void)
 	{
 		svctl::lock critsec(m_lock);
-		m_value = ReadValue<_type>();
+		if(IsBound()) m_value = ReadValue<_type>();
 	}
 
 	// m_value

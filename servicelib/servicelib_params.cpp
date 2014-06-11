@@ -341,8 +341,15 @@ namespace svctl {
 	// registry_value::ConvertTo<std::wstring>
 	template<> std::wstring registry_value::ConvertTo<std::wstring>(const registry_value& value) { return RegistryToString<std::wstring>(value); }
 
-	// vector<tstring>
-	// TODO
+	//
+	// STRING ARRAY SPECIALIZATIONS
+	//
+
+	// registry_value::ConvertTo<std::vector<std::string>>
+	template<> std::vector<std::string> registry_value::ConvertTo<std::vector<std::string>>(const registry_value& value) { return RegistryToStringVector<std::string>(value); }
+
+	// registry_value::ConvertTo<std::vector<std::wstring>>
+	template<> std::vector<std::wstring> registry_value::ConvertTo<std::vector<std::wstring>>(const registry_value& value) { return RegistryToStringVector<std::wstring>(value); }
 };
 
 

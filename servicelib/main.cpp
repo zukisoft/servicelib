@@ -132,11 +132,11 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	float test2 = static_cast<float>(test);
 	unsigned long long t = *reinterpret_cast<unsigned long long*>(&test);
 
-	ServiceParameter<std::wstring> myval;
+	ServiceParameter<std::vector<std::wstring>> myval;
 	myval.Bind(hkey, _T("TestExpandSz"));
 	myval.OnParamChange();
 
-	std::wstring val = myval;
+	std::vector<std::wstring> val = myval;
 
 	//bool b = static_cast<bool>(val);
 

@@ -146,16 +146,16 @@ registry_value::registry_value(HKEY key, const tchar_t* name)
 		if(required) {
 
 			// Allocate a temporary heap buffer and attempt to expand the environment strings into it
-			uint8_t* temp = new uint8_t[required];
+			uint8_t* temp = new uint8_t[required * sizeof(tchar_t)];
 			if(ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(m_data), reinterpret_cast<tchar_t*>(temp), required)) {
 
-				delete[] m_data;				// Release the previous raw data
-				m_data = temp;					// Replace with the new raw data
-				m_length = required;			// Replace with the new raw data length
-				m_type = REG_SZ;				// Value is now a regular REG_SZ string
+				delete[] m_data;							// Release the previous raw data
+				m_data = temp;								// Replace with the new raw data
+				m_length = required * sizeof(tchar_t);		// Replace with the new raw data length
+				m_type = REG_SZ;							// Value is now a regular REG_SZ string
 			}
 				
-			else delete[] temp;					// Failed -- just release the temporary buffer
+			else delete[] temp;				// Failed -- just release the temporary buffer
 		}
 	}
 }

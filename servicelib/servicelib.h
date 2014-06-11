@@ -366,6 +366,35 @@ namespace svctl {
 		registry_value(const registry_value&)=delete;
 		registry_value& operator=(const registry_value&)=delete;
 
+		// RegistryToBoolean
+		//
+		// ConvertTo<> helper function
+		static bool RegistryToBoolean(const registry_value& value);
+
+		// RegistryToFloat
+		//
+		// ConvertTo<> helper function
+		template <typename _type, typename _scan_type = _type>
+		static _type RegistryToFloat(const registry_value& value, const tchar_t* scanformat);
+
+		// RegistryToIntegral
+		//
+		// ConvertTo<> helper function
+		template <typename _type, typename _scan_type = _type>
+		static _type RegistryToIntegral(const registry_value& value, const tchar_t* scanformat);
+
+		// RegistryToString
+		//
+		// ConvertTo<> helper function
+		template <typename _type>
+		static _type RegistryToString(const registry_value& value);
+
+		// RegistryToStringVector
+		//
+		// ConvertTo<> helper function
+		template <typename _type>
+		static std::vector<_type> RegistryToStringVector(const registry_value& value);
+
 		// m_data
 		//
 		// Pointer to the raw registry value data

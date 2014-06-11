@@ -54,7 +54,7 @@ public:
 	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter& param)> func)
 	{
 		func(svctl::resstring(IDS_STRING101), m_test1);
-		func(L"Test2", m_test2);
+		func(_T("Test2"), m_test2);
 	}
 
 	void BindParameters(void)
@@ -92,7 +92,7 @@ public:
 
 	DWORD OnMyCommand(void)
 	{
-		OutputDebugString(L"MyService::OnMyCommand!\r\n");
+		OutputDebugString(_T("MyService::OnMyCommand!\r\n"));
 		return ERROR_SUCCESS;
 	}
 
@@ -126,20 +126,17 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	//svc2.BindParameters();
 
 	HKEY hkey;
-	DWORD result = RegCreateKeyEx(HKEY_CURRENT_USER, L"Mike", 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkey, nullptr);
+	DWORD result = RegCreateKeyEx(HKEY_CURRENT_USER, _T("Mike"), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkey, nullptr);
 
 	double test = 123.45;
 	float test2 = static_cast<float>(test);
 	unsigned long long t = *reinterpret_cast<unsigned long long*>(&test);
 
-	ServiceParameter<float> myval;
-	myval.Bind(hkey, L"TestUnsignedLong");
+	ServiceParameter<std::wstring> myval;
+	myval.Bind(hkey, _T("TestExpandSz"));
 	myval.OnParamChange();
 
-	float val = myval;
-
-	unsigned long long sc;
-	sscanf_s("0x123456", "%lli", &sc);
+	std::wstring val = myval;
 
 	//bool b = static_cast<bool>(val);
 
@@ -148,7 +145,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	return 0;
 
 	// Manual dispatching with dynamic names
-	ServiceTable services = { ServiceTableEntry<MyService>(L"MyService"), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };
+	ServiceTable services = { ServiceTableEntry<MyService>(_T("MyService")), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };
 	services.Dispatch();
 }
 

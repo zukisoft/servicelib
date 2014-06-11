@@ -337,6 +337,12 @@ namespace svctl {
 		registry_value(HKEY key, const tchar_t* name);
 		~registry_value();
 
+		// ConvertTo
+		//
+		// Converts the value into a specific type
+		template <typename _type>
+		static _type ConvertTo(const registry_value& value);
+
 		// Data
 		//
 		// Gets a pointer to the raw registry value data
@@ -579,31 +585,25 @@ namespace svctl {
 		// Determines if the parameter has been bound to the registry
 		bool IsBound(void) const;
 
-		// ReadValue
+		// m_key
 		//
-		// Reads the current value from the bound registry key
-		template <typename _type>
-		_type ReadValue(void);
+		// Bound registry parent key handle
+		HKEY m_key = nullptr;
 
 		// m_lock
 		//
 		// Synchronization object
 		critical_section m_lock;
 
-	private:
-
-		parameter(const parameter&)=delete;
-		parameter& operator=(const parameter&)=delete;
-
-		// m_key
-		//
-		// Bound registry parent key handle
-		HKEY m_key = nullptr;
-
 		// m_name
 		//
 		// Bound registry value name
 		tstring m_name;
+
+	private:
+
+		parameter(const parameter&)=delete;
+		parameter& operator=(const parameter&)=delete;
 	};
 
 	// svctl::service
@@ -866,7 +866,9 @@ public:
 	// Destructor
 	virtual ~ServiceParameter()=default;
 
+	// _type typecasting operator
 	//
+	// Note: Always returns a COPY of the contained value for concurrency
 	operator _type() const
 	{
 		svctl::lock critsec(m_lock);
@@ -885,7 +887,11 @@ public: // <--- TODO REMOVE THIS
 	virtual void OnParamChange(void)
 	{
 		svctl::lock critsec(m_lock);
-		if(IsBound()) m_value = ReadValue<_type>();
+		
+		if(!IsBound()) return;
+
+		try { m_value = svctl::registry_value::ConvertTo<_type>(svctl::registry_value(m_key, m_name.c_str())); }
+		catch(...) { /* DO NOTHING FOR NOW */ }
 	}
 
 	// m_value

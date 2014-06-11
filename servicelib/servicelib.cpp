@@ -91,10 +91,10 @@ void parameter::Bind(HKEY key, const tchar_t* name)
 bool parameter::IsBound(void) const
 {
 	lock critsec(m_lock);
-
 	return (m_key != nullptr);
 }
 
+//-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 // parameter::Unbind
 //

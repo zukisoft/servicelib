@@ -42,12 +42,11 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 	DWORD			value = 0;					// REG_DWORD value buffer
 	DWORD			cb = sizeof(value);			// Size of value buffer
 
-	// Attempt to open the service registry key with read-only access
-	tstring path = tstring(_T("SYSTEM\\CurrentControlSet\\Services\\")) + name;
-	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, path.c_str(), 0, KEY_READ, &key) == ERROR_SUCCESS) {
+	// Attempt to open the services registry key with read-only access
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("SYSTEM\\CurrentControlSet\\Services"), 0, KEY_READ, &key) == ERROR_SUCCESS) {
 		
 		// Attempt to grab the Type REG_DWORD value from the registry and close the key
-		RegQueryValueEx(key, _T("Type"), nullptr, nullptr, reinterpret_cast<LPBYTE>(&value), &cb);
+		RegGetValue(key, name, _T("Type"), RRF_RT_REG_DWORD, nullptr, &value, &cb);
 		RegCloseKey(key);
 	}
 

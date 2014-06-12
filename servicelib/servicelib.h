@@ -912,7 +912,6 @@ private:
 	// OnParamChange (svctl::parameter)
 	//
 	// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
-public: // <--- TODO REMOVE THIS
 	virtual void OnParamChange(void)
 	{
 		svctl::lock critsec(m_lock);

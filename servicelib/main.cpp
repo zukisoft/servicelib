@@ -129,7 +129,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	DWORD result = RegCreateKeyEx(HKEY_CURRENT_USER, _T("Mike"), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkey, nullptr);
 
 	ServiceParameter<std::vector<std::wstring>> myval;
-	myval.Bind(hkey, _T("TestExpandSz"));
+	myval.Bind(hkey, _T("TestMultiSz"));
 	//myval.OnParamChange();
 
 	std::vector<std::wstring> val = myval;

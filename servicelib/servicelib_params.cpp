@@ -7,6 +7,58 @@
 namespace svctl {
 
 	//-------------------------------------------------------------------------
+	// svctl::NativeToStdString
+	//
+	// Converts a native C-style generic text string into an ANSI std::string
+	//
+	// Arguments:
+	//
+	//	data		- Pointer to the native string to be converted
+
+	std::string NativeToStdString(const tchar_t* data)
+	{
+#ifdef _UNICODE
+		int required = WideCharToMultiByte(CP_ACP, 0, data, -1, nullptr, 0, nullptr, nullptr);
+		if(required) {
+
+			std::vector<char> buffer(required);
+			WideCharToMultiByte(CP_ACP, 0, data, -1, buffer.data(), required, nullptr, nullptr);
+			return std::string(buffer.data());
+		}
+
+		else return std::string();
+#else
+		return std::string(data);
+#endif
+	}
+
+	//-------------------------------------------------------------------------
+	// svctl::NativeToStdWString
+	//
+	// Converts a native C-style generic text string into a UNICODE std::wstring
+	//
+	// Arguments:
+	//
+	//	data		- Pointer to the native string to be converted
+
+	std::wstring NativeToStdWString(const tchar_t* data)
+	{
+#ifdef _UNICODE
+		return std::wstring(data);
+#else
+		int required = MultiByteToWideChar(CP_ACP, 0, data, -1, nullptr, 0);
+		if(required) {
+
+			std::vector<wchar_t> buffer(required);
+			MultiByteToWideChar(CP_ACP, 0, data, -1, buffer.data(), required);
+			return std::wstring(buffer.data());
+		}
+
+		else return std::wstring();
+#endif
+	}
+
+	//-------------------------------------------------------------------------
 	// registry_value::RegistryToBoolean (private, static)
 	//
 	// Converts a registry_value instance into a boolean value
@@ -125,31 +177,13 @@ namespace svctl {
 		// There needs to be some level of valid data in the registry value to continue
 		if((value.Data == nullptr) || (value.Length == 0) || (value.Type == REG_NONE)) return std::string();
 
-		// REG_DWORD
+		// REG_DWORD / REG_QWORD
 		if(value.Type == REG_DWORD) return std::to_string(*reinterpret_cast<unsigned long*>(value.Data));
-
-		// REG_QWORD
 		else if(value.Type == REG_QWORD) return std::to_string(*reinterpret_cast<unsigned long long*>(value.Data));
 
-		// String data types (EXPAND_SZ should be taken care of by registry_value; MULTI_SZ will
-		// only process the first string in the array)
-		else if((value.Type == REG_SZ) || (value.Type == REG_EXPAND_SZ) || (value.Type == REG_MULTI_SZ)) {
-
-#ifdef _UNICODE
-			// TODO: watch for missing NULL terminators - use +1 on the vector<> and specify lengths
-			// UNICODE --> Convert string into ANSI
-			int required = WideCharToMultiByte(CP_ACP, 0, reinterpret_cast<const wchar_t*>(value.Data), -1, nullptr, 0, nullptr, nullptr);
-			if(required) {
-
-				std::vector<char> buffer(required);
-				WideCharToMultiByte(CP_ACP, 0, reinterpret_cast<const wchar_t*>(value.Data), -1, buffer.data(), required, nullptr, nullptr);
-				return std::string(buffer.data());
-			}
-#else
-			// ANSI --> No conversion necessary
-			return std::string(reinterpret_cast<const char*>(value.Data), (value.Length / sizeof(char)));
-#endif
-		}
+		// String data types; for MULTI_SZ only the first string in the array will be used
+		else if((value.Type == REG_SZ) || (value.Type == REG_EXPAND_SZ) || (value.Type == REG_MULTI_SZ))
+			return NativeToStdString(reinterpret_cast<const tchar_t*>(value.Data));
 
 		return std::string();
 	}
@@ -168,32 +202,13 @@ namespace svctl {
 		// There needs to be some level of valid data in the registry value to continue
 		if((value.Data == nullptr) || (value.Length == 0) || (value.Type == REG_NONE)) return std::wstring();
 
-		// REG_DWORD
+		// REG_DWORD / REG_QWORD
 		if(value.Type == REG_DWORD) return std::to_wstring(*reinterpret_cast<unsigned long*>(value.Data));
-
-		// REG_QWORD
 		else if(value.Type == REG_QWORD) return std::to_wstring(*reinterpret_cast<unsigned long long*>(value.Data));
 
-		// String data types (EXPAND_SZ should be taken care of by registry_value; MULTI_SZ will
-		// only process the first string in the array)
-		else if((value.Type == REG_SZ) || (value.Type == REG_EXPAND_SZ) || (value.Type == REG_MULTI_SZ)) {
-
-#ifdef _UNICODE
-			// UNICODE --> No conversion necessary
-			return std::wstring(reinterpret_cast<const wchar_t*>(value.Data), (value.Length / sizeof(wchar_t)));
-#else
-			// TODO: watch for missing NULL terminators - use +1 on the vector<> and specify lengths
-
-			// ANSI --> Convert the string into UNICODE
-			int required = MultiByteToWideChar(CP_ACP, 0, reinterpret_cast<const char*>(value.Data), -1, nullptr, 0);
-			if(required) {
-
-				std::vector<wchar_t> buffer(required);
-				MultiByteToWideChar(CP_ACP, 0, reinterpret_cast<const char*>(value.Data), -1, buffer.data(), required);
-				return std::wstring(buffer.data());
-			}
-#endif
-		}
+		// String data types; for MULTI_SZ only the first string in the array will be used
+		else if((value.Type == REG_SZ) || (value.Type == REG_EXPAND_SZ) || (value.Type == REG_MULTI_SZ))
+			return NativeToStdWString(reinterpret_cast<const tchar_t*>(value.Data));
 
 		return std::wstring();
 	}
@@ -215,9 +230,18 @@ namespace svctl {
 		// If the data type is not REG_MULTI_SZ, return a vector with just the one converted string in it
 		if(value.Type != REG_MULTI_SZ) return std::vector<std::string> { RegistryToString<std::string>(value) };
 
-		// TODO: Continue here
+		// Start with an empty result collection
+		std::vector<std::string> result;
 
-		return std::vector<std::string>();
+		// Iterate over all of the strings in the MULTI_SZ array and add them into the vector<> collection
+		const tchar_t* current = reinterpret_cast<const tchar_t*>(value.Data);
+		while((current) && (*current)) {
+
+			result.push_back(NativeToStdString(current));
+			current += _tcslen(current) + 1;
+		}
+
+		return result;
 	}
 
 	//-------------------------------------------------------------------------
@@ -237,19 +261,18 @@ namespace svctl {
 		// If the data type is not REG_MULTI_SZ, return a vector with just the one converted string in it
 		if(value.Type != REG_MULTI_SZ) return std::vector<std::wstring> { RegistryToString<std::wstring>(value) };
 
-		//////////////
-		// works; what about ANSI conversion -- should have a helper function
-		std::vector<std::wstring> vec;
-		const wchar_t* current = reinterpret_cast<const wchar_t*>(value.Data);
+		// Start with an empty result collection
+		std::vector<std::wstring> result;
+
+		// Iterate over all of the strings in the MULTI_SZ array and add them into the vector<> collection
+		const tchar_t* current = reinterpret_cast<const tchar_t*>(value.Data);
 		while((current) && (*current)) {
 
-			size_t len = wcslen(current);
-			vec.push_back(std::wstring(current, len));
-			current += len + 1;
+			result.push_back(NativeToStdWString(current));
+			current += _tcslen(current) + 1;
 		}
-		return vec;
-		/////////////////
 
+		return result;
 	}
 
 	//-------------------------------------------------------------------------

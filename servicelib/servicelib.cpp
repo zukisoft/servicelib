@@ -127,37 +127,15 @@ void parameter::Unbind(void)
 registry_value::registry_value(HKEY key, const tchar_t* name)
 {
 	// Get the required length of the output buffer to hold the value
-	LSTATUS result = RegQueryValueEx(key, name, nullptr, &m_type, m_data, &m_length);
-	if(result == ERROR_FILE_NOT_FOUND) return;
-	else if(result != ERROR_SUCCESS) throw winexception(result);
+	LONG result = RegGetValue(key, nullptr, name, RRF_RT_ANY, &m_type, nullptr, &m_length);
+	if(result != ERROR_SUCCESS) throw winexception(result);
 
 	// Allocate the output buffer to hold the registry value
 	m_data = new uint8_t[m_length];
 
 	// Query the registry again, this time getting the actual data
-	result = RegQueryValueEx(key, name, nullptr, &m_type, m_data, &m_length);
+	result = RegGetValue(key, nullptr, name, RRF_RT_ANY, &m_type, m_data, &m_length);
 	if(result != ERROR_SUCCESS) { delete[] m_data; throw winexception(result); }
-
-	// REG_EXPAND_SZ may contain expandable strings, do that automtically and change
-	// cthe type to REG_SZ so the parameter class doesn't need to care about this
-	if(m_type == REG_EXPAND_SZ) {
-
-		DWORD required = ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(m_data), nullptr, 0);
-		if(required) {
-
-			// Allocate a temporary heap buffer and attempt to expand the environment strings into it
-			uint8_t* temp = new uint8_t[required * sizeof(tchar_t)];
-			if(ExpandEnvironmentStrings(reinterpret_cast<tchar_t*>(m_data), reinterpret_cast<tchar_t*>(temp), required)) {
-
-				delete[] m_data;							// Release the previous raw data
-				m_data = temp;								// Replace with the new raw data
-				m_length = required * sizeof(tchar_t);		// Replace with the new raw data length
-				m_type = REG_SZ;							// Value is now a regular REG_SZ string
-			}
-				
-			else delete[] temp;				// Failed -- just release the temporary buffer
-		}
-	}
 }
 
 //-----------------------------------------------------------------------------

@@ -237,9 +237,19 @@ namespace svctl {
 		// If the data type is not REG_MULTI_SZ, return a vector with just the one converted string in it
 		if(value.Type != REG_MULTI_SZ) return std::vector<std::wstring> { RegistryToString<std::wstring>(value) };
 
-		// TODO: Continue here
+		//////////////
+		// works; what about ANSI conversion -- should have a helper function
+		std::vector<std::wstring> vec;
+		const wchar_t* current = reinterpret_cast<const wchar_t*>(value.Data);
+		while((current) && (*current)) {
 
-		return std::vector<std::wstring>();
+			size_t len = wcslen(current);
+			vec.push_back(std::wstring(current, len));
+			current += len + 1;
+		}
+		return vec;
+		/////////////////
+
 	}
 
 	//-------------------------------------------------------------------------

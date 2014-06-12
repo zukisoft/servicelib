@@ -128,13 +128,9 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	HKEY hkey;
 	DWORD result = RegCreateKeyEx(HKEY_CURRENT_USER, _T("Mike"), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkey, nullptr);
 
-	double test = 123.45;
-	float test2 = static_cast<float>(test);
-	unsigned long long t = *reinterpret_cast<unsigned long long*>(&test);
-
 	ServiceParameter<std::vector<std::wstring>> myval;
 	myval.Bind(hkey, _T("TestExpandSz"));
-	myval.OnParamChange();
+	//myval.OnParamChange();
 
 	std::vector<std::wstring> val = myval;
 

@@ -54,11 +54,11 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 }
 
 //-----------------------------------------------------------------------------
-// svctl::parameter
+// svctl::parameter_base
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// parameter::Bind
+// parameter_base::Bind
 //
 // Binds the parameter to the parent registry key
 //
@@ -67,7 +67,7 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 //	key		- Parent Parameters registry key handle
 //	name	- Registry value name to bind the parameter to
 
-void parameter::Bind(HKEY key, const tchar_t* name) 
+void parameter_base::Bind(HKEY key, const tchar_t* name) 
 {
 	lock critsec(m_lock);
 
@@ -79,7 +79,7 @@ void parameter::Bind(HKEY key, const tchar_t* name)
 }
 
 //-----------------------------------------------------------------------------
-// parameter::IsBound (protected)
+// parameter_base::IsBound (protected)
 //
 // Determines if the parameter has been bound to the registry or not
 //
@@ -87,15 +87,14 @@ void parameter::Bind(HKEY key, const tchar_t* name)
 //
 //	NONE
 
-bool parameter::IsBound(void) const
+bool parameter_base::IsBound(void) const
 {
 	lock critsec(m_lock);
 	return (m_key != nullptr);
 }
 
 //-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------
-// parameter::Unbind
+// parameter_base::Unbind
 //
 // Unbinds the parameter from the parent registry key
 //
@@ -103,7 +102,7 @@ bool parameter::IsBound(void) const
 //
 //	NONE
 
-void parameter::Unbind(void)
+void parameter_base::Unbind(void)
 {
 	lock critsec(m_lock);
 
@@ -259,7 +258,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 //
 //	func		- Function to pass each parameter name and reference to
 
-void service::IterateParameters(std::function<void(const tstring& name, parameter& param)> func)
+void service::IterateParameters(std::function<void(const tstring& name, parameter_base& param)> func)
 {
 	// Default implementation has no parameters to iterate
 }
@@ -385,7 +384,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		HKEY keyparams = nullptr;
 		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
 			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
-		IterateParameters([=](const tstring& name, parameter& param) { param.Bind(keyparams, name.c_str()); });
+		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); });
 
 		// Derived service class startup
 		OnStart(argc, argv);
@@ -396,7 +395,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 
 		// Ubind all of the parameters and close the parameters registry key
 		// TODO: this should also be in the catch; consider SHARE_PROCESS services; this will leak
-		IterateParameters([](const tstring&, parameter& param) { param.Unbind(); });
+		IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
 		RegCloseKey(keyparams);
 	}
 

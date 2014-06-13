@@ -579,15 +579,15 @@ namespace svctl {
 		LPSERVICE_MAIN_FUNCTION m_servicemain;
 	};
 
-	// svctl::parameter
+	// svctl::parameter_base
 	//
-	// Base class for template-specific service parameters
-	class parameter
+	// Base class for template-specific service ss
+	class parameter_base
 	{
 	public:
 
 		// Destructor
-		virtual ~parameter()=default;
+		virtual ~parameter_base()=default;
 
 		// Bind
 		//
@@ -607,7 +607,7 @@ namespace svctl {
 	protected:
 
 		// Constructor
-		parameter()=default;
+		parameter_base()=default;
 
 		// IsBound
 		//
@@ -631,8 +631,8 @@ namespace svctl {
 
 	private:
 
-		parameter(const parameter&)=delete;
-		parameter& operator=(const parameter&)=delete;
+		parameter_base(const parameter_base&)=delete;
+		parameter_base& operator=(const parameter_base&)=delete;
 	};
 
 	// svctl::service
@@ -658,7 +658,7 @@ namespace svctl {
 		// IterateParameters
 		//
 		// Iterates over the collection of parameters and executes a function against each
-		virtual void IterateParameters(std::function<void(const tstring& name, parameter& param)> func);
+		virtual void IterateParameters(std::function<void(const tstring& name, parameter_base& param)> func);
 
 		// OnStart
 		//
@@ -881,10 +881,10 @@ private:
 //-----------------------------------------------------------------------------
 // ::ServiceParameter
 //
-// Template version of svctl::parameter
+// Template version of svctl::parameter_base
 
 template <typename _type>
-class ServiceParameter : public svctl::parameter
+class ServiceParameter : public svctl::parameter_base
 {
 public:
 
@@ -909,7 +909,7 @@ private:
 	ServiceParameter(const ServiceParameter&)=delete;
 	ServiceParameter& operator=(const ServiceParameter&)=delete;
 
-	// OnParamChange (svctl::parameter)
+	// OnParamChange (svctl::parameter_base)
 	//
 	// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
 	virtual void OnParamChange(void)

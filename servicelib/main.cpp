@@ -51,7 +51,7 @@ public:
 
 	MyService()=default;
 
-	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter& param)> func)
+	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func)
 	{
 		func(svctl::resstring(IDS_STRING101), m_test1);
 		func(_T("Test2"), m_test2);
@@ -59,9 +59,9 @@ public:
 
 	void BindParameters(void)
 	{
-		IterateParameters([&](const svctl::tstring& name, const svctl::parameter& param) -> void {
+		IterateParameters([&](const svctl::tstring& name, const svctl::parameter_base& param) -> void {
 
-			const svctl::parameter* p = &param;
+			const svctl::parameter_base* p = &param;
 			int x = 123;
 		});
 	}

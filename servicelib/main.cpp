@@ -51,23 +51,14 @@ public:
 
 	MyService()=default;
 
-	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func)
-	{
-		func(svctl::resstring(IDS_STRING101), m_test1);
-		func(_T("Test2"), m_test2);
-	}
+	//virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func)
+	//{
+	//	func(svctl::resstring(IDS_STRING101), m_test1);
+	//	func(_T("Test2"), m_test2);
+	//}
 
-	void BindParameters(void)
-	{
-		IterateParameters([&](const svctl::tstring& name, const svctl::parameter_base& param) -> void {
-
-			const svctl::parameter_base* p = &param;
-			int x = 123;
-		});
-	}
-
-	ServiceParameter<int> m_test1 = 123;
-	ServiceParameter<uint32_t> m_test2;
+	DWordParameter m_test1 = 123;
+	DWordParameter m_test2;
 
 	void OnStart(int argc, svctl::tchar_t** argv)
 	{
@@ -102,6 +93,11 @@ public:
 		///CONTROL_HANDLER(200, OnMyCommand)
 	END_CONTROL_HANDLER_MAP()
 
+	BEGIN_PARAMETER_MAP(MyService)
+		PARAMETER(IDS_STRING101, m_test1)
+		PARAMETER(_T("NamedValue"), m_test2)
+	END_PARAMETER_MAP()
+
 private:
 
 	MyService(const MyService&)=delete;
@@ -118,27 +114,6 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	_CrtSetDbgFlag(nDbgFlags);								// Set the new flags
 
 #endif	// _DEBUG
-
-	//MyService svc;
-	//svc.BindParameters();
-
-	//MyService svc2;
-	//svc2.BindParameters();
-
-	HKEY hkey;
-	DWORD result = RegCreateKeyEx(HKEY_CURRENT_USER, _T("Mike"), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hkey, nullptr);
-
-	ServiceParameter<std::vector<std::wstring>> myval;
-	myval.Bind(hkey, _T("TestMultiSz"));
-	//myval.OnParamChange();
-
-	std::vector<std::wstring> val = myval;
-
-	//bool b = static_cast<bool>(val);
-
-	RegCloseKey(hkey);
-
-	return 0;
 
 	// Manual dispatching with dynamic names
 	ServiceTable services = { ServiceTableEntry<MyService>(_T("MyService")), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };

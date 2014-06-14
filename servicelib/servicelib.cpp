@@ -111,41 +111,6 @@ void parameter_base::Unbind(void)
 }
 
 //-----------------------------------------------------------------------------
-// svctl::registry_value
-//-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
-// registry_value Constructor
-//
-// Arguments:
-//
-//	key			- Parent registry key handle
-//	name		- Name of the registry value to load
-
-registry_value::registry_value(HKEY key, const tchar_t* name)
-{
-	// Get the required length of the output buffer to hold the value
-	LONG result = RegGetValue(key, nullptr, name, RRF_RT_ANY, &m_type, nullptr, &m_length);
-	if(result != ERROR_SUCCESS) throw winexception(result);
-
-	// Allocate the output buffer to hold the registry value
-	m_data = new uint8_t[m_length];
-
-	// Query the registry again, this time getting the actual data
-	result = RegGetValue(key, nullptr, name, RRF_RT_ANY, &m_type, m_data, &m_length);
-	if(result != ERROR_SUCCESS) { delete[] m_data; throw winexception(result); }
-}
-
-//-----------------------------------------------------------------------------
-// registry_value Destructor
-
-registry_value::~registry_value()
-{
-	// Release the contained raw data, if it was ever allocated
-	if(m_data) delete[] m_data;
-}
-
-//-----------------------------------------------------------------------------
 // svctl::resstring
 //-----------------------------------------------------------------------------
 

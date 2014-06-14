@@ -44,6 +44,7 @@
 #include <Windows.h>
 
 #pragma warning(push, 4)
+#pragma warning(disable:4127)			// conditional expression is constant
 
 //-----------------------------------------------------------------------------
 // GENERAL DECLARATIONS
@@ -326,91 +327,6 @@ namespace svctl {
 		bool m_locked;
 	};
 
-	// svctl::registry_value
-	//
-	// Reads a single raw value from the system registry
-	class registry_value
-	{
-	public:
-
-		// Constructor / Destructor
-		registry_value(HKEY key, const tchar_t* name);
-		~registry_value();
-
-		// ConvertTo
-		//
-		// Converts the value into a specific type
-		template <typename _type>
-		static _type ConvertTo(const registry_value& value);
-
-		// Data
-		//
-		// Gets a pointer to the raw registry value data
-		__declspec(property(get=getData)) void* Data;
-		void* getData(void) const { return m_data; }
-
-		// Length
-		//
-		// Gets the length of the raw registry value data
-		__declspec(property(get=getLength)) DWORD Length;
-		DWORD getLength(void) const { return m_length; }
-
-		// Type
-		//
-		// Gets the type of the raw registry value data
-		__declspec(property(get=getType)) DWORD Type;
-		DWORD getType(void) const { return m_type; }
-
-	private:
-
-		registry_value(const registry_value&)=delete;
-		registry_value& operator=(const registry_value&)=delete;
-
-		// RegistryToBoolean
-		//
-		// ConvertTo<> helper function
-		static bool RegistryToBoolean(const registry_value& value);
-
-		// RegistryToFloat
-		//
-		// ConvertTo<> helper function
-		template <typename _type, typename _scan_type = _type>
-		static _type RegistryToFloat(const registry_value& value, const tchar_t* scanformat);
-
-		// RegistryToIntegral
-		//
-		// ConvertTo<> helper function
-		template <typename _type, typename _scan_type = _type>
-		static _type RegistryToIntegral(const registry_value& value, const tchar_t* scanformat);
-
-		// RegistryToString
-		//
-		// ConvertTo<> helper function
-		template <typename _type>
-		static _type RegistryToString(const registry_value& value);
-
-		// RegistryToStringVector
-		//
-		// ConvertTo<> helper function
-		template <typename _type>
-		static std::vector<_type> RegistryToStringVector(const registry_value& value);
-
-		// m_data
-		//
-		// Pointer to the raw registry value data
-		uint8_t* m_data = nullptr;
-
-		// m_length
-		//
-		// Length of the raw registry value data
-		DWORD m_length = 0;
-
-		// m_type
-		//
-		// Type of the raw registry value data
-		DWORD m_type = REG_NONE;
-	};
-
 	// svctl::resstring
 	//
 	// Implements a tstring loaded from the module's string table
@@ -614,6 +530,104 @@ namespace svctl {
 		// Determines if the parameter has been bound to the registry
 		bool IsBound(void) const;
 
+		// ReadValue<T>
+		//
+		// Prototype for specialized versions only; no default implementation
+		template <typename _type> _type ReadValue(void)
+		{
+			static_assert(false, "parameter_base::ReadValue() must be specialized for specific data types");
+		}
+
+		// ReadValue<uint32_t>
+		//
+		// Specialization of ReadValue<> for REG_DWORD
+		template <> uint32_t ReadValue<uint32_t>(void)
+		{
+			uint32_t	value;							// Value to be read from registry
+			DWORD		length = sizeof(uint32_t);		// Length of value buffer
+
+			// Attempt to read the value from the registry, just set value to zero on failure
+			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_DWORD | RRF_ZEROONFAILURE, nullptr, &value, &length);
+			return value;
+		}
+
+		// ReadValue<uint64_t>
+		//
+		// Specialization of ReadValue<> for REG_QWORD
+		template <> uint64_t ReadValue<uint64_t>(void)
+		{
+			uint64_t	value;							// Value to be read from registry
+			DWORD		length = sizeof(uint64_t);		// Length of value buffer
+
+			// Attempt to read the value from the registry, just set value to zero on failure
+			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_QWORD | RRF_ZEROONFAILURE, nullptr, &value, &length);
+			return value;
+		}
+
+		// ReadValue<tstring>
+		//
+		// Specialization of ReadValue<> for REG_SZ / REG_EXPAND_SZ
+		template <> tstring ReadValue<tstring>(void)
+		{
+			DWORD length = 0;
+
+			// Get the length of the buffer required to hold the string
+			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, nullptr, &length);
+			if(result != ERROR_SUCCESS) return tstring();
+
+			// Allocate a local std::vector<> as the backing storage and read the value from the registry
+			std::vector<uint8_t> buffer(length);
+			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+
+			// Convert the registry value into a tstring instance
+			return tstring(reinterpret_cast<tchar_t*>(buffer.data()));
+		}
+
+		// ReadValue<std::vector<tstring>>
+		//
+		// Specialization of ReadValue<> for REG_MULTI_SZ
+		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(void)
+		{
+			DWORD length = 0;
+
+			// Get the length of the buffer required to hold the string array
+			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_MULTI_SZ, nullptr, nullptr, &length);
+			if(result != ERROR_SUCCESS) return std::vector<tstring>();
+
+			// Allocate a local std::vector<> as the backing storage and read the value from the registry
+			std::vector<uint8_t> buffer(length);
+			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_MULTI_SZ | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+
+			// Create a collection of tstring objects, one for each string in the returned array
+			std::vector<tstring> value;
+			const tchar_t* current = reinterpret_cast<const tchar_t*>(buffer.data());
+			while((current) && (*current)) {
+
+				value.push_back(tstring(current));
+				current += _tcslen(current) + 1;
+			}
+
+			return value;
+		}
+
+		// ReadValue<std::vector<uint8_t>>
+		//
+		// Specialization of ReadValue<> for REG_BINARY
+		template <> std::vector<uint8_t> ReadValue<std::vector<uint8_t>>(void)
+		{
+			DWORD length = 0;
+
+			// Get the length of the buffer required to hold the string
+			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_BINARY, nullptr, nullptr, &length);
+			if(result != ERROR_SUCCESS) return std::vector<uint8_t>();
+
+			// Allocate a local std::vector<> as the backing storage and read the value from the registry
+			std::vector<uint8_t> value(length);
+			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_BINARY | RRF_ZEROONFAILURE, nullptr, value.data(), &length);
+
+			return value;
+		}
+
 		// m_key
 		//
 		// Bound registry parent key handle
@@ -633,6 +647,52 @@ namespace svctl {
 
 		parameter_base(const parameter_base&)=delete;
 		parameter_base& operator=(const parameter_base&)=delete;
+	};
+
+	// svctl::parameter
+	//
+	// Service parameter template class
+	template<typename _type, bool _zeroinit = std::is_pod<_type>::value>
+	class parameter : public parameter_base
+	{
+	public:
+
+		// Not intended for use with pointer or reference data types
+		static_assert(!std::is_pointer<_type>::value, "Service parameters cannot be pointer types");
+		static_assert(!std::is_reference<_type>::value, "Service parameters cannot be reference types");
+
+		// Constructors
+		parameter() { if(_zeroinit) memset(&m_value, 0, sizeof(_type)); }
+		parameter(_type defvalue) : m_value(defvalue) {}
+
+		// Destructor
+		virtual ~parameter()=default;
+
+		// typecasting operator
+		operator _type() const
+		{
+			svctl::lock critsec(m_lock);
+			return m_value;
+		}
+
+	private:
+
+		parameter(const parameter&)=delete;
+		parameter& operator=(const parameter&)=delete;
+
+		// OnParamChange (svctl::parameter_base)
+		//
+		// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
+		virtual void OnParamChange(void)
+		{
+			svctl::lock critsec(m_lock);
+			if(IsBound()) m_value = parameter_base::ReadValue<_type>();
+		}
+
+		// m_value
+		//
+		// Cached parameter value
+		_type m_value;
 	};
 
 	// svctl::service
@@ -879,56 +939,6 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// ::ServiceParameter
-//
-// Template version of svctl::parameter_base
-
-template <typename _type>
-class ServiceParameter : public svctl::parameter_base
-{
-public:
-
-	// Constructors
-	ServiceParameter() { memset(&m_value, 0, sizeof(_type)); }
-	ServiceParameter(_type defvalue) : m_value(defvalue) {}
-
-	// Destructor
-	virtual ~ServiceParameter()=default;
-
-	// _type typecasting operator
-	//
-	// Note: Always returns a COPY of the contained value for concurrency
-	operator _type() const
-	{
-		svctl::lock critsec(m_lock);
-		return m_value;
-	}
-
-private:
-
-	ServiceParameter(const ServiceParameter&)=delete;
-	ServiceParameter& operator=(const ServiceParameter&)=delete;
-
-	// OnParamChange (svctl::parameter_base)
-	//
-	// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
-	virtual void OnParamChange(void)
-	{
-		svctl::lock critsec(m_lock);
-		
-		if(!IsBound()) return;
-
-		try { m_value = svctl::registry_value::ConvertTo<_type>(svctl::registry_value(m_key, m_name.c_str())); }
-		catch(...) { /* DO NOTHING FOR NOW */ }
-	}
-
-	// m_value
-	//
-	// Currently loaded value for the parameter
-	_type m_value;
-};
-
-//-----------------------------------------------------------------------------
 // ::ServiceTableEntry<>
 //
 // Template version of svctl::service_table_entry
@@ -994,6 +1004,33 @@ public:
 	Service()=default;
 	virtual ~Service()=default;
 
+protected:
+
+	// BinaryParameter
+	//
+	// Vector of uint8_t binary parameter data
+	using BinaryParameter = svctl::parameter<std::vector<uint8_t>>;
+
+	// DWordParameter
+	//
+	// 32-bit unsigned integer parameter
+	using DWordParameter = svctl::parameter<uint32_t>;
+
+	// MultiStringParameter
+	//
+	// Vector of std:basic_string<tchar_t> parameters
+	using MultiStringParameter = svctl::parameter<std::vector<svctl::tstring>>;
+
+	// QWordParameter
+	//
+	// 64-bit unsigned integer parameter
+	using QWordParameter = svctl::parameter<uint64_t>;
+
+	// StringParameter
+	//
+	// std::basic_string<tchar_t> parameter
+	using StringParameter = svctl::parameter<svctl::tstring>;
+	
 private:
 
 	Service(const Service&)=delete;
@@ -1045,6 +1082,34 @@ private:
 		}; \
 		static svctl::control_handler_table table { std::make_move_iterator(std::begin(handlers)), std::make_move_iterator(std::end(handlers)) }; \
 		return table; \
+	}
+
+// PARAMETER_MAP
+//
+// Used to declare the IterateParameters virtual function implementation for the service.
+// The map entry defines what the name of the parameter registry value will be and indicates
+// what svctl::parameter<> member variable is to be bound to that registry value.
+//
+// Local module resource identifiers can also be used in lieu of hard-coding the value name
+//
+// Sample usage:
+//
+//	BEGIN_PARAMETER_MAP(MyService)
+//		PARAMETER(_T("TestExpandSz"), m_expandsz)
+//		PARAMETER(IDS_MYDWORD, m_mydword)
+//	END_PARAMETER_MAP()
+//
+//  StringParameter m_expandsz = _T("MyDefaultStringValue");
+//	DWordParameter m_mydword = 0;
+//
+#define BEGIN_PARAMETER_MAP(_class) \
+	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func) \
+	{
+
+#define PARAMETER(_name, _var) \
+	func(svctl::resstring(_name), _var);
+
+#define END_PARAMETER_MAP() \
 	}
 
 //-----------------------------------------------------------------------------

@@ -1062,9 +1062,9 @@ private:
 // Sample usage:
 //
 //	BEGIN_CONTROL_HANDLER_MAP(MyService)
-//		CONTROL_HANDLER(ServiceControl::Stop, OnStop)
-//		CONTROL_HANDLER(ServiceControl::ParamChange, OnParameterChange)
-//		CONTROL_HANDLER(200, OnMyCustomCommand)
+//		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
+//		CONTROL_HANDLER_ENTRY(ServiceControl::ParamChange, OnParameterChange)
+//		CONTROL_HANDLER_ENTRY(200, OnMyCustomCommand)
 //	END_CONTROL_HANDLER_MAP()
 //
 #define BEGIN_CONTROL_HANDLER_MAP(_class) \
@@ -1075,7 +1075,7 @@ private:
 		static std::unique_ptr<svctl::control_handler> handlers[] = { \
 		std::make_unique<ServiceControlHandler<__control_map_class>>(ServiceControl::Interrogate, &__control_map_class::__null_handler##_class),
 
-#define CONTROL_HANDLER(_control, _func) \
+#define CONTROL_HANDLER_ENTRY(_control, _func) \
 		std::make_unique<ServiceControlHandler<__control_map_class>>(static_cast<ServiceControl>(_control), &__control_map_class::_func),
 
 #define END_CONTROL_HANDLER_MAP() \
@@ -1095,8 +1095,8 @@ private:
 // Sample usage:
 //
 //	BEGIN_PARAMETER_MAP(MyService)
-//		PARAMETER(_T("TestExpandSz"), m_expandsz)
-//		PARAMETER(IDS_MYDWORD, m_mydword)
+//		PARAMETER_ENTRY(_T("TestExpandSz"), m_expandsz)
+//		PARAMETER_ENTRY(IDS_MYDWORD, m_mydword)
 //	END_PARAMETER_MAP()
 //
 //  StringParameter m_expandsz = _T("MyDefaultStringValue");
@@ -1106,7 +1106,7 @@ private:
 	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func) \
 	{
 
-#define PARAMETER(_name, _var) \
+#define PARAMETER_ENTRY(_name, _var) \
 	func(svctl::resstring(_name), _var);
 
 #define END_PARAMETER_MAP() \

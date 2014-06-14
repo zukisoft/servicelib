@@ -25,7 +25,7 @@ private:
 	// Series of ATL-like macros that define a mapping of service
 	// control codes to handler functions
 	BEGIN_CONTROL_HANDLER_MAP(MinimalService)
-		CONTROL_HANDLER(ServiceControl::Stop, OnStop)
+		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
 	END_CONTROL_HANDLER_MAP()
 
 	// OnStart (Service)
@@ -88,14 +88,14 @@ public:
 	}
 
 	BEGIN_CONTROL_HANDLER_MAP(MyService)
-		CONTROL_HANDLER(ServiceControl::Stop, OnStop)
+		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
 		///CONTROL_HANDLER(ServiceControl::Pause, OnPause)
 		///CONTROL_HANDLER(200, OnMyCommand)
 	END_CONTROL_HANDLER_MAP()
 
 	BEGIN_PARAMETER_MAP(MyService)
-		PARAMETER(IDS_STRING101, m_test1)
-		PARAMETER(_T("NamedValue"), m_test2)
+		PARAMETER_ENTRY(IDS_STRING101, m_test1)
+		PARAMETER_ENTRY(_T("NamedValue"), m_test2)
 	END_PARAMETER_MAP()
 
 private:

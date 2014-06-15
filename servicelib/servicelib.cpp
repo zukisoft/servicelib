@@ -73,9 +73,6 @@ void parameter_base::Bind(HKEY key, const tchar_t* name)
 
 	m_key = key;
 	m_name = name;
-
-	// Force an initial load of the parameter after binding
-	OnParamChange();
 }
 
 //-----------------------------------------------------------------------------
@@ -185,8 +182,9 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Nothing should be coming in from the service control manager when stopped
 	if(m_status == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
 
-	// INTERROGATE, STOP, PAUSE and CONTINUE are special case handlers
+	// INTERROGATE, PARAMCHANGE, STOP, PAUSE and CONTINUE are special case handlers
 	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
+	else if(control == ServiceControl::ParameterChange) { ReloadParameters(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Stop) { Stop(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Pause) { Pause(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Continue) { Continue(); return ERROR_SUCCESS; }
@@ -240,7 +238,8 @@ void service::IterateParameters(std::function<void(const tstring& name, paramete
 
 DWORD service::getAcceptedControls(void) const
 {
-	DWORD accept = 0;
+	// All services now support PARAMCHANGE by default due to svctl::parameter implementation
+	DWORD accept = SERVICE_ACCEPT_PARAMCHANGE;
 
 	// Derive what controls this service should report based on what service control handlers have
 	// been implemented in the derived class
@@ -308,6 +307,21 @@ DWORD service::Pause(void)
 }
 
 //-----------------------------------------------------------------------------
+// service::ReloadParameters
+//
+// Reloads the values for all bound parameter member variables
+//
+// Arguments:
+//
+//	NONE
+
+void service::ReloadParameters(void)
+{
+	// This can be done asynchronously; just iterate each parameter and reload it's value from the registry
+	std::async(std::launch::async, [=]() { IterateParameters([=](const tstring&, parameter_base& param) { param.Load(); }); });
+}
+
+//-----------------------------------------------------------------------------
 // service::ServiceMain
 //
 // Service instance entry point
@@ -349,7 +363,7 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		HKEY keyparams = nullptr;
 		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
 			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
-		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); });
+		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
 
 		// Derived service class startup
 		OnStart(argc, argv);

@@ -509,10 +509,10 @@ namespace svctl {
 		// Binds the parameter to the parent key and value name
 		void Bind(HKEY key, const tchar_t* name);
 
-		// OnParamChange
+		// Load
 		//
-		// Invoked in response to a SERVICE_CONTROL_PARAM_CHANGE
-		virtual void OnParamChange(void) = 0;
+		// Loads the parameter value from the registry
+		virtual void Load(void) = 0;
 
 		// Unbind
 		//
@@ -653,10 +653,10 @@ namespace svctl {
 		parameter(const parameter&)=delete;
 		parameter& operator=(const parameter&)=delete;
 
-		// OnParamChange (svctl::parameter_base)
+		// Load (svctl::parameter_base)
 		//
 		// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
-		virtual void OnParamChange(void)
+		virtual void Load(void)
 		{
 			svctl::lock critsec(m_lock);
 			if(IsBound()) m_value = parameter_base::ReadValue<_type>(_format);
@@ -702,6 +702,11 @@ namespace svctl {
 		//
 		// Pauses the service
 		DWORD Pause(void);
+
+		// ReloadParameters
+		//
+		// Reloads all of the bound service parameter values
+		void ReloadParameters(void);
 
 		// ServiceMain
 		//

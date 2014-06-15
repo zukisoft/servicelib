@@ -51,67 +51,41 @@ public:
 
 	MyService()=default;
 
-	//virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func)
-	//{
-	//	func(svctl::resstring(IDS_STRING101), m_test1);
-	//	func(_T("Test2"), m_test2);
-	//}
-
-	class myclass
-	{
-	public:
-		//myclass() { x = 123; }
-		int x;
-	};
-
-	//DWordParameter m_test1 = 123;
-	DWordParameter m_test2 { 456 };
-	BinaryParameter<myclass> m_test3;
-	MultiStringParameter m_test4 { _T("hello") }; //, 2, 3, 4, 5 }; //{ svctl::tstring(_T("hello")), svctl::tstring(_T("world")) }; //), _T("world") };
-	StringParameter m_expandsz { _T("defaultstring") };
-
 	void OnStart(int argc, svctl::tchar_t** argv)
 	{
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
-		//state_machine::DoStuff();
+		//std::async(std::launch::async, [=]() { 
+		//
+		//	while(true) {
+		//		svctl::tstring param = m_paramtestsz;
+		//		OutputDebugString(param.c_str());
+		//		OutputDebugString(_T("\r\n"));
+		//		Sleep(100);
+		//	}
+		//});
 
-		//wchar_t temp[255];
-		//wsprintf(temp, L"MyService (0x%08X)::OnStart  argc=%d, argv[0] = %s\r\n", this, argc, argv[0]);
-		//OutputDebugString(temp);
 	}
 
 	void OnStop(void)
 	{
 	}
 
-	//void OnPause(void)
-	//{
-	//	//Sleep(15000);
-	//}
-
-	DWORD OnMyCommand(void)
-	{
-		OutputDebugString(_T("MyService::OnMyCommand!\r\n"));
-		return ERROR_SUCCESS;
-	}
-
 	BEGIN_CONTROL_HANDLER_MAP(MyService)
 		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
-		///CONTROL_HANDLER(ServiceControl::Pause, OnPause)
-		///CONTROL_HANDLER(200, OnMyCommand)
 	END_CONTROL_HANDLER_MAP()
 
 	BEGIN_PARAMETER_MAP(MyService)
-		//PARAMETER_ENTRY(IDS_STRING101, m_test1)
-		//PARAMETER_ENTRY(_T("NamedValue"), m_test2)
+		PARAMETER_ENTRY(_T("TestSz"), m_paramtestsz)
 	END_PARAMETER_MAP()
 
 private:
 
 	MyService(const MyService&)=delete;
 	MyService& operator=(const MyService&)=delete;
+
+	StringParameter m_paramtestsz { _T("defaultparam") };
 };
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)

@@ -333,6 +333,8 @@ void service::ReloadParameters(void)
 
 void service::ServiceMain(int argc, tchar_t** argv)
 {
+	HKEY keyparams = nullptr;			// Service parameters registry key
+
 	_ASSERTE(argc);						// Service name = argv[0]
 
 	// Read the service process type flags dynamically from the registry
@@ -360,7 +362,6 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		SetStatus(ServiceStatus::StartPending);
 
 		// Open or create the Parameters registry key for this service and bind the parameters
-		HKEY keyparams = nullptr;
 		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
 			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
 		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
@@ -371,11 +372,6 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		// Service is now running; wait for the STOP event object to be signaled
 		SetStatus(ServiceStatus::Running);
 		WaitForSingleObject(m_stopsignal, INFINITE);
-
-		// Ubind all of the parameters and close the parameters registry key
-		// TODO: this should also be in the catch; consider SHARE_PROCESS services; this will leak
-		IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
-		RegCloseKey(keyparams);
 	}
 
 	catch(winexception& ex) { 
@@ -391,6 +387,10 @@ void service::ServiceMain(int argc, tchar_t** argv)
 		try { SetStatus(ServiceStatus::Stopped, ERROR_SERVICE_SPECIFIC_ERROR, static_cast<DWORD>(E_FAIL)); }
 		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
 	}
+
+	// Unbind all of the service parameters and close the parameters registry key
+	IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
+	if(keyparams) RegCloseKey(keyparams);
 }
 
 //-----------------------------------------------------------------------------

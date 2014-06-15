@@ -530,54 +530,35 @@ namespace svctl {
 		// Determines if the parameter has been bound to the registry
 		bool IsBound(void) const;
 
-		// ReadValue<T>
+		// ReadValue<trivial>
 		//
-		// Prototype for specialized versions only; no default implementation
-		template <typename _type> _type ReadValue(void)
+		// Generic version of ReadValue for trivial data types
+		template <typename _type> _type ReadValue(DWORD format)
 		{
-			static_assert(false, "parameter_base::ReadValue() must be specialized for specific data types");
-		}
+			static_assert(std::is_trivial<_type>::value, "data type is not trivial; ReadValue<> must be specialized");
 
-		// ReadValue<uint32_t>
-		//
-		// Specialization of ReadValue<> for REG_DWORD
-		template <> uint32_t ReadValue<uint32_t>(void)
-		{
-			uint32_t	value;							// Value to be read from registry
-			DWORD		length = sizeof(uint32_t);		// Length of value buffer
+			_type		value;							// Value to be read from registry
+			DWORD		length = sizeof(_type);			// Length of the value buffer
 
-			// Attempt to read the value from the registry, just set value to zero on failure
-			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_DWORD | RRF_ZEROONFAILURE, nullptr, &value, &length);
-			return value;
-		}
-
-		// ReadValue<uint64_t>
-		//
-		// Specialization of ReadValue<> for REG_QWORD
-		template <> uint64_t ReadValue<uint64_t>(void)
-		{
-			uint64_t	value;							// Value to be read from registry
-			DWORD		length = sizeof(uint64_t);		// Length of value buffer
-
-			// Attempt to read the value from the registry, just set value to zero on failure
-			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_QWORD | RRF_ZEROONFAILURE, nullptr, &value, &length);
+			// Attempt to read the binary value from the registry, set data to zeros on failure
+			RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, &value, &length);
 			return value;
 		}
 
 		// ReadValue<tstring>
 		//
 		// Specialization of ReadValue<> for REG_SZ / REG_EXPAND_SZ
-		template <> tstring ReadValue<tstring>(void)
+		template <> tstring ReadValue<tstring>(DWORD format)
 		{
 			DWORD length = 0;
 
 			// Get the length of the buffer required to hold the string
-			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, nullptr, &length);
+			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format, nullptr, nullptr, &length);
 			if(result != ERROR_SUCCESS) return tstring();
 
 			// Allocate a local std::vector<> as the backing storage and read the value from the registry
 			std::vector<uint8_t> buffer(length);
-			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
 
 			// Convert the registry value into a tstring instance
 			return tstring(reinterpret_cast<tchar_t*>(buffer.data()));
@@ -586,17 +567,17 @@ namespace svctl {
 		// ReadValue<std::vector<tstring>>
 		//
 		// Specialization of ReadValue<> for REG_MULTI_SZ
-		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(void)
+		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(DWORD format)
 		{
 			DWORD length = 0;
 
 			// Get the length of the buffer required to hold the string array
-			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_MULTI_SZ, nullptr, nullptr, &length);
+			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format, nullptr, nullptr, &length);
 			if(result != ERROR_SUCCESS) return std::vector<tstring>();
 
 			// Allocate a local std::vector<> as the backing storage and read the value from the registry
 			std::vector<uint8_t> buffer(length);
-			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_MULTI_SZ | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
 
 			// Create a collection of tstring objects, one for each string in the returned array
 			std::vector<tstring> value;
@@ -606,24 +587,6 @@ namespace svctl {
 				value.push_back(tstring(current));
 				current += _tcslen(current) + 1;
 			}
-
-			return value;
-		}
-
-		// ReadValue<std::vector<uint8_t>>
-		//
-		// Specialization of ReadValue<> for REG_BINARY
-		template <> std::vector<uint8_t> ReadValue<std::vector<uint8_t>>(void)
-		{
-			DWORD length = 0;
-
-			// Get the length of the buffer required to hold the string
-			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_BINARY, nullptr, nullptr, &length);
-			if(result != ERROR_SUCCESS) return std::vector<uint8_t>();
-
-			// Allocate a local std::vector<> as the backing storage and read the value from the registry
-			std::vector<uint8_t> value(length);
-			RegGetValue(m_key, nullptr, m_name.c_str(), RRF_RT_REG_BINARY | RRF_ZEROONFAILURE, nullptr, value.data(), &length);
 
 			return value;
 		}
@@ -652,7 +615,13 @@ namespace svctl {
 	// svctl::parameter
 	//
 	// Service parameter template class
-	template<typename _type, bool _zeroinit = std::is_pod<_type>::value>
+	//
+	//	_type		- Value type
+	//	_format		- Format flags to pass into RegGetValue
+	//	_inittype	- Type used with an initializer list
+	//	_zeroinit	- Flag that the type can be zero-initialized by default
+
+	template<typename _type, DWORD _format, typename _inittype = _type, bool _zeroinit = std::is_trivial<_type>::value>
 	class parameter : public parameter_base
 	{
 	public:
@@ -663,7 +632,12 @@ namespace svctl {
 
 		// Constructors
 		parameter() { if(_zeroinit) memset(&m_value, 0, sizeof(_type)); }
-		parameter(_type defvalue) : m_value(defvalue) {}
+		explicit parameter(_inittype defvalue) : m_value({defvalue}) {}
+		
+		// TODO: This does not work in Visual C++ 2013, appears to be a bug in the compiler that 
+		// prevents using an initializer_list as a non-static member variable initializer
+		//
+		//parameter(std::initializer_list<_inittype> init) : m_value(init) {}
 
 		// Destructor
 		virtual ~parameter()=default;
@@ -686,7 +660,7 @@ namespace svctl {
 		virtual void OnParamChange(void)
 		{
 			svctl::lock critsec(m_lock);
-			if(IsBound()) m_value = parameter_base::ReadValue<_type>();
+			if(IsBound()) m_value = parameter_base::ReadValue<_type>(_format);
 		}
 
 		// m_value
@@ -1008,28 +982,29 @@ protected:
 
 	// BinaryParameter
 	//
-	// Vector of uint8_t binary parameter data
-	using BinaryParameter = svctl::parameter<std::vector<uint8_t>>;
+	// Generic REG_BINARY parameter for any trivial data type
+	template <class _type>
+	using BinaryParameter = svctl::parameter<_type, RRF_RT_REG_BINARY>;
 
 	// DWordParameter
 	//
 	// 32-bit unsigned integer parameter
-	using DWordParameter = svctl::parameter<uint32_t>;
+	using DWordParameter = svctl::parameter<uint32_t, RRF_RT_DWORD>;
 
 	// MultiStringParameter
 	//
 	// Vector of std:basic_string<tchar_t> parameters
-	using MultiStringParameter = svctl::parameter<std::vector<svctl::tstring>>;
+	using MultiStringParameter = svctl::parameter<std::vector<svctl::tstring>, RRF_RT_REG_MULTI_SZ, svctl::tstring>;
 
 	// QWordParameter
 	//
 	// 64-bit unsigned integer parameter
-	using QWordParameter = svctl::parameter<uint64_t>;
+	using QWordParameter = svctl::parameter<uint64_t, RRF_RT_QWORD>;
 
 	// StringParameter
 	//
 	// std::basic_string<tchar_t> parameter
-	using StringParameter = svctl::parameter<svctl::tstring>;
+	using StringParameter = svctl::parameter<svctl::tstring, RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ>;
 	
 private:
 
@@ -1099,12 +1074,12 @@ private:
 //		PARAMETER_ENTRY(IDS_MYDWORD, m_mydword)
 //	END_PARAMETER_MAP()
 //
-//  StringParameter m_expandsz = _T("MyDefaultStringValue");
-//	DWordParameter m_mydword = 0;
+//  StringParameter				m_expandsz { _T("defaultstring") };
+//	DWordParameter				m_mydword = 0;
+//	BinaryParameter<mystruct>	m_binparam;
 //
 #define BEGIN_PARAMETER_MAP(_class) \
-	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func) \
-	{
+	virtual void IterateParameters(std::function<void(const svctl::tstring& name, svctl::parameter_base& param)> func) {
 
 #define PARAMETER_ENTRY(_name, _var) \
 	func(svctl::resstring(_name), _var);

@@ -57,8 +57,18 @@ public:
 	//	func(_T("Test2"), m_test2);
 	//}
 
-	DWordParameter m_test1 = 123;
-	DWordParameter m_test2;
+	class myclass
+	{
+	public:
+		//myclass() { x = 123; }
+		int x;
+	};
+
+	//DWordParameter m_test1 = 123;
+	DWordParameter m_test2 { 456 };
+	BinaryParameter<myclass> m_test3;
+	MultiStringParameter m_test4 { _T("hello") }; //, 2, 3, 4, 5 }; //{ svctl::tstring(_T("hello")), svctl::tstring(_T("world")) }; //), _T("world") };
+	StringParameter m_expandsz { _T("defaultstring") };
 
 	void OnStart(int argc, svctl::tchar_t** argv)
 	{
@@ -94,8 +104,8 @@ public:
 	END_CONTROL_HANDLER_MAP()
 
 	BEGIN_PARAMETER_MAP(MyService)
-		PARAMETER_ENTRY(IDS_STRING101, m_test1)
-		PARAMETER_ENTRY(_T("NamedValue"), m_test2)
+		//PARAMETER_ENTRY(IDS_STRING101, m_test1)
+		//PARAMETER_ENTRY(_T("NamedValue"), m_test2)
 	END_PARAMETER_MAP()
 
 private:

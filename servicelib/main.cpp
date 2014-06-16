@@ -56,15 +56,15 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
-		//std::async(std::launch::async, [=]() { 
-		//
-		//	while(true) {
-		//		svctl::tstring param = m_paramtestsz;
-		//		OutputDebugString(param.c_str());
-		//		OutputDebugString(_T("\r\n"));
-		//		Sleep(100);
-		//	}
-		//});
+		std::async(std::launch::async, [=]() { 
+		
+			while(true) {
+				svctl::tstring param = m_paramtestsz;
+				OutputDebugString(param.c_str());
+				OutputDebugString(_T("\r\n"));
+				Sleep(100);
+			}
+		});
 
 	}
 

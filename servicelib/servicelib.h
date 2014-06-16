@@ -540,7 +540,9 @@ namespace svctl {
 			DWORD		length = sizeof(_type);			// Length of the value buffer
 
 			// Attempt to read the binary value from the registry, set data to zeros on failure
-			RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, &value, &length);
+			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, &value, &length);
+			if(result != ERROR_SUCCESS) throw winexception(result);
+
 			return value;
 		}
 
@@ -553,11 +555,12 @@ namespace svctl {
 
 			// Get the length of the buffer required to hold the string
 			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format, nullptr, nullptr, &length);
-			if(result != ERROR_SUCCESS) return tstring();
+			if(result != ERROR_SUCCESS) throw winexception(result);
 
 			// Allocate a local std::vector<> as the backing storage and read the value from the registry
 			std::vector<uint8_t> buffer(length);
-			RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			result = RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			if(result != ERROR_SUCCESS) throw winexception(result);
 
 			// Convert the registry value into a tstring instance
 			return tstring(reinterpret_cast<tchar_t*>(buffer.data()));
@@ -572,11 +575,12 @@ namespace svctl {
 
 			// Get the length of the buffer required to hold the string array
 			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format, nullptr, nullptr, &length);
-			if(result != ERROR_SUCCESS) return std::vector<tstring>();
+			if(result != ERROR_SUCCESS) throw winexception(result);
 
 			// Allocate a local std::vector<> as the backing storage and read the value from the registry
 			std::vector<uint8_t> buffer(length);
-			RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			result = RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			if(result != ERROR_SUCCESS) throw winexception(result);
 
 			// Create a collection of tstring objects, one for each string in the returned array
 			std::vector<tstring> value;
@@ -648,6 +652,12 @@ namespace svctl {
 			return m_value;
 		}
 
+		// IsDefaulted
+		//
+		// Flag if the value has been defaulted or if it has been read from the registry
+		__declspec(property(get=getIsDefaulted)) bool IsDefaulted;
+		bool getIsDefaulted(void) const { svctl::lock critsec(m_lock); return m_defaulted; }
+
 	private:
 
 		parameter(const parameter&)=delete;
@@ -659,8 +669,22 @@ namespace svctl {
 		virtual void Load(void)
 		{
 			svctl::lock critsec(m_lock);
-			if(IsBound()) m_value = parameter_base::ReadValue<_type>(_format);
+			if(!IsBound()) return;
+
+			try { 
+			
+				// Attempt to read the value from the registry, and if successful clear defaulted flag
+				m_value = parameter_base::ReadValue<_type>(_format);
+				m_defaulted = false;
+			}
+			
+			catch(...) { /* DO NOTHING ON REGISTRY EXCEPTION */ }
 		}
+
+		// m_defaulted
+		//
+		// Flag if the parameter is using the default value
+		bool m_defaulted = true;
 
 		// m_value
 		//

@@ -182,15 +182,18 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Nothing should be coming in from the service control manager when stopped
 	if(m_status == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
 
-	// INTERROGATE, PARAMCHANGE, STOP, PAUSE and CONTINUE are special case handlers
+	// INTERROGATE, STOP, PAUSE and CONTINUE are special case handlers
 	if(control == ServiceControl::Interrogate) return ERROR_SUCCESS;
-	else if(control == ServiceControl::ParameterChange) { ReloadParameters(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Stop) { Stop(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Pause) { Pause(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Continue) { Continue(); return ERROR_SUCCESS; }
 
 	// Done with messing about with the current service status; release the critsec
 	critsec.Release();
+
+	// PARAMCHANGE is automatically accepted if there are any parameters in the service,
+	// but the derived class may also want to handle it; call it here but don't return
+	if(control == ServiceControl::ParameterChange) ReloadParameters();
 
 	// Iterate over all of the implemented control handlers and invoke each of them
 	// in the order in which they appear in the control handler vector<>
@@ -236,10 +239,9 @@ void service::IterateParameters(std::function<void(const tstring& name, paramete
 //
 //	NONE
 
-DWORD service::getAcceptedControls(void) const
+DWORD service::getAcceptedControls(void)
 {
-	// All services now support PARAMCHANGE by default due to svctl::parameter implementation
-	DWORD accept = SERVICE_ACCEPT_PARAMCHANGE;
+	DWORD accept = 0;
 
 	// Derive what controls this service should report based on what service control handlers have
 	// been implemented in the derived class
@@ -262,6 +264,9 @@ DWORD service::getAcceptedControls(void) const
 		else if(iterator->Control == ServiceControl::TriggerEvent)			accept |= SERVICE_ACCEPT_TRIGGEREVENT;
 		else if(iterator->Control == ServiceControl::UserModeReboot)		accept |= SERVICE_ACCEPT_USERMODEREBOOT;
 	}
+
+	// If there are any svctl parameters in the service class, auto-accept PARAMCHANGE
+	IterateParameters([&](const tstring&, parameter_base&) { accept |= SERVICE_ACCEPT_PARAMCHANGE; });
 
 	return accept;						// Return the generated bitmask
 }

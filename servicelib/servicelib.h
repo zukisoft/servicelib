@@ -782,7 +782,7 @@ namespace svctl {
 		//
 		// Gets what control codes the service will accept
 		__declspec(property(get=getAcceptedControls)) DWORD AcceptedControls;
-		DWORD getAcceptedControls(void) const;
+		DWORD getAcceptedControls(void);
 
 		// m_status
 		//

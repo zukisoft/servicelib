@@ -41,3 +41,91 @@ SOFTWARE.
 >> RPC SERVICE (need rpcservice.h / rpcservice.cpp?)
 
 >> HOW TO DEBUG SERVICES
+
+
+PARAMETERS
+----------
+
+Support for basic read-only registry-based service parameters is provided by the following
+data types that can be declared for service-local member variables:
+
+DWordParameter (uint32_t)
+- Registry type: REG_BINARY or REG_DWORD
+
+MultiStringParameter (std::vector<svctl::tstring>)
+- Registry type: REG_MULTI_SZ
+
+QWordParameter (uint64_t)
+- Registry type: REG_BINARY or REG_QWORD
+
+StringParameter (svctl::tstring)
+- Registry type: REG_SZ or REG_EXPAND_SZ
+
+BinaryParameter<T> (T)
+- Registry type: REG_BINARY
+- T must be a trivial data type, see std::is_trivial() for a definition of what qualifies
+
+Declare the parameter(s) as member variable(s) in the service class, optionally
+specifying a default value.  If no default value is set at construction, the value
+will either be set to zero (DWordParameter, QWordParameter, BinaryParameter<T>), an
+empty string (StringParameter) or an empty vector<> (MultiStringParameter):
+
+	private:
+		...
+		StringParameter m_mysz { _T("defaultvalue") };
+		DWordParameter m_mydword;
+
+In order for the service to locate and bind each parameter, they must be exposed via
+the BEGIN_PARAMETER_MAP() set of macros, similar to how control handlers are exposed.
+Static constant parameter value names can be used, as can resource string identifiers
+provided that the string table is part of the local executable's resources:
+
+	BEGIN_PARAMETER_MAP(MyService)
+		PARAMETER_ENTRY(IDS_MYSZ_NAME, m_mysz)
+		PARAMETER_ENTRY(_T("MyDWORDParameter"), m_mydword)
+	END_PARAMETER_MAP()
+
+At service startup, the PARAMETER_MAP is iterated and each parameter is bound to the 
+HLKM\System\CurrentControlSet\Services\{service name}\Parameters registry key.  If this
+parent key does not exist, it will be created automatically.  Each parameter will then
+be loaded from the parameters key using the name specified in the PARAMETER_MAP.
+
+If any parameters exist in the PARAMETER_MAP, the service will also automatically accept
+the SERVICE_CONTROL_PARAMCHANGE control, and will reload each bound parameter in response
+to this service control *before* it is passed onto the service class itself.  This makes
+it unnecessary for the service to declare a custom handler if no other meaningful work
+needs to be done in response to SERVICE_CONTROL_PARAMCHANGE.
+
+Parameter instances are intended to be used as cached read-only values that can be
+copied into local variables as needed, they should not be used directly.  A *copy* of the
+underlying value are returned each time a parameter is accessed, this behavior should be 
+kept in mind, especially for the MultiStringParameter and BinaryParameter<T> versions, as
+they potentially store a great deal of data.  This behavior is enforced to allow the parameters
+to be thread-safe with the SERVICE_CONTROL_PARAMCHANGE automatic handler.
+
+Correct way to declare and access parameters:
+
+	BEGIN_PARAMETER_MAP(MyService)
+		PARAMETER_ENTRY(_T("RetryCount"), m_retrycount)
+		PARAMETER_ENTRY(_T("TempDirectory"), m_tempdir)
+	END_PARAMETER_MAP()
+
+	DWordParameter m_retrycount = 10;
+	StringParameter m_tempdir;
+
+	void OnStart(DWORD argc, LPTSTR* argv)
+	{
+		svctl::tstring tempdir = m_tempdir;	
+		CreateTempDirectoryToHoldInterestingStuff(tempdir);
+		...		
+		uint32_t retrycount = m_retrycount;
+		while(--retrycount) { 
+			...
+		}
+	}
+
+Parameters can be manually reloaded from the registry by invoking the Load method, although
+if the parameter was not successfully bound to the service's Parameters registry key, this
+method will do nothing.  Detection of a successful load from the registry can be accomplished
+by checking the IsDefaulted property of the parameter variable.  This will be set to false once
+the value has been loaded from the registry at least once

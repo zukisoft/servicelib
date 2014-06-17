@@ -34,6 +34,8 @@ SOFTWARE.
 >> SERVICE TABLES 
 
 >> INSTALL/REMOVE
+- with sc
+- with code
 
 >> SERVICE MODULES / AUTOMATING SERVICE TABLES AND INSTALL/REMOVE
 
@@ -41,6 +43,9 @@ SOFTWARE.
 >> RPC SERVICE (need rpcservice.h / rpcservice.cpp?)
 
 >> HOW TO DEBUG SERVICES
+
+>> STUFF IN SVCTL THAT CAN BE USED
+- svctl::tstring
 
 
 PARAMETERS

@@ -458,7 +458,7 @@ namespace svctl {
 		// Assignment Operator
 		service_table_entry& operator=(const service_table_entry&)=default;
 
-		// todo
+		// SERVICE_TABLE_ENTRY typecasting operator
 		operator SERVICE_TABLE_ENTRY() const { return { const_cast<tchar_t*>(m_name.c_str()), m_servicemain }; }
 
 		// Name

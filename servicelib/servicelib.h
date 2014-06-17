@@ -192,10 +192,20 @@ namespace svctl {
 	typedef std::wstring	tstring;
 #endif
 
+	// svctl::register_handler_func
+	//
+	// Function used to register a service's control handler callback function
+	typedef std::function<SERVICE_STATUS_HANDLE(LPCTSTR, LPHANDLER_FUNCTION_EX, LPVOID)> register_handler_func;
+
 	// svctl::report_status_func
 	//
 	// Function used to report a service status to the service control manager
 	typedef std::function<void(SERVICE_STATUS&)> report_status_func;
+
+	// svctl::set_status_func
+	//
+	// Function used to set a service status using the handle returned by the register_handler_func
+	typedef std::function<BOOL(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS)> set_status_func;
 
 	// svctl::signal_type
 	//
@@ -717,6 +727,22 @@ namespace svctl {
 		// Iterates over the collection of parameters and executes a function against each
 		virtual void IterateParameters(std::function<void(const tstring& name, parameter_base& param)> func);
 
+		// LocalMain
+		//
+		// Entry point when the service is executed as an application
+	public:			// TODO REMOVE ME
+		template <class _derived>
+		static void LocalMain(DWORD argc, LPTSTR* argv, ServiceProcessType processtype, register_handler_func registerhandler, set_status_func setstatus)
+		{
+			_ASSERTE(argc);					// Service name = argv[0]
+
+			// Create an instance of the derived service class and invoke ServiceMain() with the specified
+			// process type and handler/status registration functions
+			std::unique_ptr<service> instance = std::make_unique<_derived>();
+			instance->ServiceMain(static_cast<int>(argc), argv, processtype, registerhandler, setstatus);
+		}
+	protected:		// TODO REMOVE ME
+
 		// OnStart
 		//
 		// Invoked when the service is started; must be implemented in the service
@@ -738,8 +764,14 @@ namespace svctl {
 		template <class _derived>
 		static void WINAPI ServiceMain(DWORD argc, LPTSTR* argv)
 		{
+			_ASSERTE(argc);					// Service name = argv[0]
+
+			// Create an instance of the derived service class and invoke ServiceMain() with the
+			// service process type read from the registry and the standard Win32 API functions
+			// for registering the service control handler and setting service status
+
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
-			instance->ServiceMain(static_cast<int>(argc), argv);
+			instance->ServiceMain(static_cast<int>(argc), argv, GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus);
 		}
 
 		// Stop
@@ -782,7 +814,7 @@ namespace svctl {
 		// ServiceMain
 		//
 		// Service entry point
-		void ServiceMain(int argc, tchar_t** argv);
+		void ServiceMain(int argc, tchar_t** argv, ServiceProcessType processtype, register_handler_func registerhandler, set_status_func setstatus);
 
 		// SetNonPendingStatus
 		//

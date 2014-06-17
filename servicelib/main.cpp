@@ -99,6 +99,21 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
+	svctl::register_handler_func myfunc = [](LPCTSTR, LPHANDLER_FUNCTION_EX, LPVOID) {
+
+		return (SERVICE_STATUS_HANDLE)0x12345678;
+	};
+
+	svctl::set_status_func mystatusfunc = [](SERVICE_STATUS_HANDLE, LPSERVICE_STATUS) {
+
+		return TRUE;
+	};
+
+	LPTSTR myargv[] = { L"MyService",  L"MyService2" };
+
+	MyService::LocalMain<MyService>(1, myargv, ServiceProcessType::Unique, myfunc, mystatusfunc);
+	return 0;
+
 	// Manual dispatching with dynamic names
 	ServiceTable services = { ServiceTableEntry<MyService>(_T("MyService")), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };
 	services.Dispatch();

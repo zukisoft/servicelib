@@ -88,6 +88,10 @@ private:
 	StringParameter m_paramtestsz { _T("defaultparam") };
 };
 
+namespace svctl {
+
+};
+
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
 {
 
@@ -99,19 +103,13 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	svctl::register_handler_func myfunc = [](LPCTSTR, LPHANDLER_FUNCTION_EX, LPVOID) {
+	LPTSTR myargv[] = { L"MyService",  L"sweeeet - argument number 2" };
 
-		return (SERVICE_STATUS_HANDLE)0x12345678;
-	};
+	///////// TESTING
+	svctl::service_context context = { ServiceProcessType::Shared, svctl::local_service_controller::RegisterControlHandler, 
+		svctl::local_service_controller::SetStatus };
 
-	svctl::set_status_func mystatusfunc = [](SERVICE_STATUS_HANDLE, LPSERVICE_STATUS) {
-
-		return TRUE;
-	};
-
-	LPTSTR myargv[] = { L"MyService",  L"MyService2" };
-
-	MyService::LocalMain<MyService>(1, myargv, ServiceProcessType::Unique, myfunc, mystatusfunc);
+	MyService::LocalMain<MyService>(1, myargv, context);
 	return 0;
 
 	// Manual dispatching with dynamic names

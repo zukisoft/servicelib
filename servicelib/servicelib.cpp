@@ -327,7 +327,7 @@ void service::ReloadParameters(void)
 }
 
 //-----------------------------------------------------------------------------
-// service::ServiceMain
+// service::Main
 //
 // Service instance entry point
 //
@@ -335,28 +335,29 @@ void service::ReloadParameters(void)
 //
 //	argc				- Number of command line arguments
 //	argv				- Array of command line argument strings
-//	processtype			- Service process type flag
-//	registerhandler		- Context-specific version of RegisterServiceCtrlHandlerEx
-//	setstatus			- Context-specific version of SetServiceStatus
+//	context				- Service runtime context information and callbacks
 
-void service::ServiceMain(int argc, tchar_t** argv, ServiceProcessType processtype, register_handler_func registerhandler, set_status_func setstatus)
+void service::Main(int argc, tchar_t** argv, const service_context& context)
 {
 	HKEY keyparams = nullptr;						// Service parameters registry key
+
+	_ASSERTE(context.RegisterHandlerFunc);
+	_ASSERTE(context.SetStatusFunc);
 
 	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
 		return reinterpret_cast<service*>(context)->ControlHandler(static_cast<ServiceControl>(control), eventtype, eventdata); };
 
 	// Register a service control handler for this service instance
-	SERVICE_STATUS_HANDLE statushandle = registerhandler(argv[0], handler, this);
+	SERVICE_STATUS_HANDLE statushandle = context.RegisterHandlerFunc(argv[0], handler, this);
 	if(statushandle == 0) throw winexception();
 
 	// Define a status reporting function that uses the handle and process type defined above
 	m_statusfunc = [=](SERVICE_STATUS& status) -> void {
 
 		_ASSERTE(statushandle != 0);
-		status.dwServiceType = static_cast<DWORD>(processtype);
-		if(!setstatus(statushandle, &status)) throw winexception();
+		status.dwServiceType = static_cast<DWORD>(context.ProcessType);
+		if(!context.SetStatusFunc(statushandle, &status)) throw winexception();
 	};
 
 	try {
@@ -366,10 +367,20 @@ void service::ServiceMain(int argc, tchar_t** argv, ServiceProcessType processty
 
 		// Open or create the Parameters registry key for this service and bind the parameters
 		//
-		// TODO: Deal with local applications differently, or just mask the exception that will occur?
+		// TODO: This doesn't work for local applications not running as administrator, deal with that
+		// perhaps by abstracting the entire method for reading parameters (command line? xml?).  Once
+		// that is fixed up, put back the exception result
+		//
+		//if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
+		//	0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
+		//IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
+
+		// for now just bind/load only if RegCreateKeyEx() is actually successful
 		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
-			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
-		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
+			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) == ERROR_SUCCESS) {
+
+			IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
+		}
 
 		// Derived service class startup
 		OnStart(argc, argv);

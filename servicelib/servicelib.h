@@ -33,6 +33,7 @@
 #include <array>
 #include <functional>
 #include <future>
+#include <map>
 #include <memory>
 #include <exception>
 #include <string>
@@ -702,6 +703,28 @@ namespace svctl {
 		_type m_value;
 	};
 
+	// svctl::service_context
+	//
+	// Service runtime context information provided to ServiceMain to
+	// allow for differences in service vs. local application model
+	struct service_context
+	{
+		// ProcessType
+		//
+		// Defines the service process type (unique/shared)
+		ServiceProcessType ProcessType;
+
+		// RegisterHandlerFunc
+		//
+		// Function used by the service to register the control handler
+		register_handler_func RegisterHandlerFunc;
+
+		// SetStatusFunc
+		//
+		// Function used by the service to set status
+		set_status_func SetStatusFunc;
+	};
+
 	// svctl::service
 	//
 	// Primary service base class
@@ -732,14 +755,13 @@ namespace svctl {
 		// Entry point when the service is executed as an application
 	public:			// TODO REMOVE ME
 		template <class _derived>
-		static void LocalMain(DWORD argc, LPTSTR* argv, ServiceProcessType processtype, register_handler_func registerhandler, set_status_func setstatus)
+		static void LocalMain(DWORD argc, LPTSTR* argv, const service_context& context)
 		{
 			_ASSERTE(argc);					// Service name = argv[0]
 
-			// Create an instance of the derived service class and invoke ServiceMain() with the specified
-			// process type and handler/status registration functions
+			// Create an instance of the derived service class and invoke ServiceMain() with specified context
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
-			instance->ServiceMain(static_cast<int>(argc), argv, processtype, registerhandler, setstatus);
+			instance->Main(static_cast<int>(argc), argv, context);
 		}
 	protected:		// TODO REMOVE ME
 
@@ -766,12 +788,13 @@ namespace svctl {
 		{
 			_ASSERTE(argc);					// Service name = argv[0]
 
-			// Create an instance of the derived service class and invoke ServiceMain() with the
-			// service process type read from the registry and the standard Win32 API functions
-			// for registering the service control handler and setting service status
+			// When running as a regular service, the process type is read from the registry and the
+			// standard Win32 service API functions are used for registration and status reporting
+			service_context context = { GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus };
 
+			// Create an instance of the derived service class and invoke ServiceMain()
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
-			instance->ServiceMain(static_cast<int>(argc), argv, GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus);
+			instance->Main(static_cast<int>(argc), argv, context);
 		}
 
 		// Stop
@@ -814,7 +837,7 @@ namespace svctl {
 		// ServiceMain
 		//
 		// Service entry point
-		void ServiceMain(int argc, tchar_t** argv, ServiceProcessType processtype, register_handler_func registerhandler, set_status_func setstatus);
+		void Main(int argc, tchar_t** argv, const service_context& context);
 
 		// SetNonPendingStatus
 		//
@@ -874,6 +897,103 @@ namespace svctl {
 		//
 		// Signal indicating that SERVICE_CONTROL_STOP has been triggered
 		signal<signal_type::ManualReset> m_stopsignal;
+	};
+
+	// svctl::local_service
+	//
+	// TODO: words
+	class local_service
+	{
+	public:
+
+		local_service(LPHANDLER_FUNCTION_EX handler, void* context) : m_handler(handler), m_context(context)
+		{
+			// todo: validate arguments and throw winexception() if no good
+		}
+
+		~local_service()=default;
+
+		// SERVICE_STATUS_HANDLE typecasting operator
+		operator SERVICE_STATUS_HANDLE() const;
+
+		// Status
+		//
+		// Gets/Sets the current service status
+
+		// TODO: move to cpp and make thread-safe (this is why it's by value)
+		__declspec(property(get=getStatus, put=putStatus)) SERVICE_STATUS Status;
+		SERVICE_STATUS getStatus(void) const { /*copy*/ return m_status; }
+		void putStatus(SERVICE_STATUS value) { m_status = value; /*copy*/ }
+
+	private:
+
+		local_service(const local_service&)=delete;
+		local_service& operator=(const local_service&)=delete;
+
+		// m_context
+		//
+		// Context pointer passed into the LPHANDLER_FUNCTION_EX callback
+		const void* m_context;
+
+		// TODO: need lock or perhaps a fancier sync object, but that should probably do just fine
+
+		// m_handler
+		//
+		// Pointer to the service control handler callback
+		const LPHANDLER_FUNCTION_EX m_handler;
+
+		// m_status
+		//
+		// Current service status
+		SERVICE_STATUS m_status;
+	};
+
+	// svctl::local_service_controller
+	//
+	// Mimicks the operations provided by the service control manager in order
+	// to run svctl-based services as local applications
+	class local_service_controller
+	{
+	public:
+
+		// TODO: Need StartServiceControlDispatcher clone, accepts SERVICE_TABLE_ENTRY array
+		// and loads the member collection.  Won't return until all services are stopped.
+		// need to figure out how I want to handle multiple services in the EXE, should they
+		// all be started by default, or should I go all the way with a service console app
+		// like DISKPART to control things? That might be pretty annoying for simple cases
+		// think about this some more.  The console would allow exercising service controls,
+		// whereas auto-starting and waiting for exit would not.  Also need a CTRL+C and/or
+		// a kill handler to stop the services?  Hmmm... perhaps more complex than I wanted.
+
+		// RegisterControlHandler
+		//
+		// Mimicks the operation of the global ::RegisterServiceCtrlHandlerEx function
+		static SERVICE_STATUS_HANDLE WINAPI RegisterControlHandler(LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context);
+
+		// SetStatus
+		//
+		// Mimicks the operation of the global ::SetServiceStatus function
+		static BOOL WINAPI SetStatus(SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status);
+
+	private:
+
+		local_service_controller(const local_service_controller&)=delete;
+		local_service_controller& operator=(const local_service_controller&)=delete;
+
+		// todo: rename me
+		struct mycomp
+		{
+			bool operator() (const tstring& lhs, const tstring& rhs) const 
+			{
+				// Perform a case-insensitive string comparison for the map<> keys
+				return _tcsicmp(lhs.c_str(), rhs.c_str()) < 0;
+			}
+		};
+
+		// s_services
+		//
+		// Static collection of registered services
+		static std::map<tstring, std::unique_ptr<local_service>, mycomp> s_services;
 	};
 
 } // namespace svctl

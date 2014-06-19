@@ -144,7 +144,6 @@
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="local_service_controller.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="servicelib.cpp" />
     <ClCompile Include="stdafx.cpp">

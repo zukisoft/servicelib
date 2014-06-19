@@ -182,15 +182,17 @@ namespace svctl {
 	// ANSI string character type
 	typedef char			char_t;
 
-	// svctl::tchar_t, svctl::tstring
+	// svctl::tchar_t, svctl::tstring, 
 	//
 	// General text character and STL string types
 #ifndef _UNICODE
 	typedef char			tchar_t;
 	typedef std::string		tstring;
+	#define to_tstring		std::to_string
 #else
 	typedef wchar_t			tchar_t;
 	typedef std::wstring	tstring;
+	#define to_tstring		std::to_wstring
 #endif
 
 	// svctl::register_handler_func
@@ -922,8 +924,8 @@ namespace svctl {
 
 		// TODO: move to cpp and make thread-safe (this is why it's by value)
 		__declspec(property(get=getStatus, put=putStatus)) SERVICE_STATUS Status;
-		SERVICE_STATUS getStatus(void) const { /*copy*/ return m_status; }
-		void putStatus(SERVICE_STATUS value) { m_status = value; /*copy*/ }
+		SERVICE_STATUS getStatus(void);
+		void putStatus(SERVICE_STATUS value);
 
 	private:
 
@@ -935,7 +937,10 @@ namespace svctl {
 		// Context pointer passed into the LPHANDLER_FUNCTION_EX callback
 		const void* m_context;
 
-		// TODO: need lock or perhaps a fancier sync object, but that should probably do just fine
+		// m_lock
+		//
+		// Synchronization object
+		critical_section m_lock;
 
 		// m_handler
 		//
@@ -946,54 +951,6 @@ namespace svctl {
 		//
 		// Current service status
 		SERVICE_STATUS m_status;
-	};
-
-	// svctl::local_service_controller
-	//
-	// Mimicks the operations provided by the service control manager in order
-	// to run svctl-based services as local applications
-	class local_service_controller
-	{
-	public:
-
-		// TODO: Need StartServiceControlDispatcher clone, accepts SERVICE_TABLE_ENTRY array
-		// and loads the member collection.  Won't return until all services are stopped.
-		// need to figure out how I want to handle multiple services in the EXE, should they
-		// all be started by default, or should I go all the way with a service console app
-		// like DISKPART to control things? That might be pretty annoying for simple cases
-		// think about this some more.  The console would allow exercising service controls,
-		// whereas auto-starting and waiting for exit would not.  Also need a CTRL+C and/or
-		// a kill handler to stop the services?  Hmmm... perhaps more complex than I wanted.
-
-		// RegisterControlHandler
-		//
-		// Mimicks the operation of the global ::RegisterServiceCtrlHandlerEx function
-		static SERVICE_STATUS_HANDLE WINAPI RegisterControlHandler(LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context);
-
-		// SetStatus
-		//
-		// Mimicks the operation of the global ::SetServiceStatus function
-		static BOOL WINAPI SetStatus(SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status);
-
-	private:
-
-		local_service_controller(const local_service_controller&)=delete;
-		local_service_controller& operator=(const local_service_controller&)=delete;
-
-		// todo: rename me
-		struct mycomp
-		{
-			bool operator() (const tstring& lhs, const tstring& rhs) const 
-			{
-				// Perform a case-insensitive string comparison for the map<> keys
-				return _tcsicmp(lhs.c_str(), rhs.c_str()) < 0;
-			}
-		};
-
-		// s_services
-		//
-		// Static collection of registered services
-		static std::map<tstring, std::unique_ptr<local_service>, mycomp> s_services;
 	};
 
 } // namespace svctl

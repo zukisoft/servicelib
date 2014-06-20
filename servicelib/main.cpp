@@ -163,14 +163,16 @@ public:
 	//
 	// Waits for the service to reach a specified status
 
-	//void WaitForStatus(ServiceStatus status)
-	//{
-	//	// Just continue to wait forever and ever until the status is reached
-	//	while(!WaitForStatus(status, INFINITE)) {}
-	//}
-
-	bool WaitForStatus(ServiceStatus status) //, uint32_t waithint)
+	void WaitForStatus(ServiceStatus status)
 	{
+		// Just continue to wait forever and ever until the status is reached
+		while(!WaitForStatus(status, INFINITE)) {}
+	}
+
+	bool WaitForStatus(ServiceStatus status, uint32_t timeout)
+	{
+		UNREFERENCED_PARAMETER(timeout);
+
 		std::unique_lock<std::mutex> critsec(m_statuslock);
 		m_statuschanged.wait(critsec, [=]() { return static_cast<ServiceStatus>(m_status.dwCurrentState) == status; });
 
@@ -236,9 +238,6 @@ private:
 		// There is an expectation that argv[0] is set to the service name
 		if((argvector.size() == 0) || (argvector[0].length() == 0)) throw svctl::winexception(E_INVALIDARG);
 
-		// Reset the signal object that identifies when the service has set it's initial status and we can return
-		m_startsignal.Reset();
-
 		// Define the control handler registration callback for this harness instance
 		svctl::register_handler_func registerfunc = ([=](LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context) -> SERVICE_STATUS_HANDLE 
 		{
@@ -261,11 +260,7 @@ private:
 			_ASSERTE(reinterpret_cast<ServiceHarness*>(handle) == this);
 			if(reinterpret_cast<ServiceHarness*>(handle) != this) { SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
 
-			// When the service sets SERVICE_START_PENDING, it's OK to unblock the Start() function
-			if(status->dwCurrentState == SERVICE_START_PENDING) m_startsignal.Set();
-
 			m_status = *status;						// Copy the new SERVICE_STATUS
-			
 			critsec.unlock();						// Release the critical section
 			m_statuschanged.notify_all();			// Notify the status has been changed
 
@@ -288,7 +283,7 @@ private:
 		}));
 
 		// Wait up to 30 seconds for the service to set SERVICE_START_PENDING before giving up
-		if(WaitForSingleObject(m_startsignal, 30000) == WAIT_TIMEOUT) throw svctl::winexception(ERROR_SERVICE_REQUEST_TIMEOUT);
+		if(!WaitForStatus(ServiceStatus::StartPending, 30000)) throw svctl::winexception(ERROR_SERVICE_REQUEST_TIMEOUT);
 	}
 
 	// m_context
@@ -300,24 +295,15 @@ private:
 	//
 	// Service control handler callback function pointer
 	LPHANDLER_FUNCTION_EX m_handler = nullptr;
-		
+
+	////
 	std::mutex m_statuslock;
 	std::condition_variable m_statuschanged;
 
-	// m_lock
-	//
-	// Synchronization object
-	//svctl::critical_section m_lock;
-		
 	// m_mainthread
 	//
 	// Main service thread
 	std::thread m_mainthread;
-
-	// m_startsignal
-	//
-	// Signaled once the service has set an initial StartPending status
-	svctl::signal<svctl::signal_type::ManualReset> m_startsignal;
 
 	// m_status
 	//

@@ -161,22 +161,12 @@ public:
 
 	// WaitForStatus
 	//
-	// Waits for the service to reach a specified status
-
-	void WaitForStatus(ServiceStatus status)
+	// Waits for the service to reach a specific status
+	bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE)
 	{
-		// Just continue to wait forever and ever until the status is reached
-		while(!WaitForStatus(status, INFINITE)) {}
-	}
-
-	bool WaitForStatus(ServiceStatus status, uint32_t timeout)
-	{
-		UNREFERENCED_PARAMETER(timeout);
-
 		std::unique_lock<std::mutex> critsec(m_statuslock);
-		m_statuschanged.wait(critsec, [=]() { return static_cast<ServiceStatus>(m_status.dwCurrentState) == status; });
-
-		return true;
+		return m_statuschanged.wait_until(critsec, std::chrono::system_clock::now() + std::chrono::milliseconds(timeout),
+			[=]() { return static_cast<ServiceStatus>(m_status.dwCurrentState) == status; });
 	}
 
 	void WaitForStop(void)
@@ -296,10 +286,6 @@ private:
 	// Service control handler callback function pointer
 	LPHANDLER_FUNCTION_EX m_handler = nullptr;
 
-	////
-	std::mutex m_statuslock;
-	std::condition_variable m_statuschanged;
-
 	// m_mainthread
 	//
 	// Main service thread
@@ -310,10 +296,15 @@ private:
 	// Current service status
 	SERVICE_STATUS m_status;
 
-	// m_statussignal
+	// m_statuschanged
 	//
-	// Signaled anytime the service status has changed
-	svctl::signal<svctl::signal_type::AutomaticReset> m_statussignal;
+	// Condition variable set when service status has changed
+	std::condition_variable m_statuschanged;
+
+	// m_statuslock
+	//
+	// Critical section to serialize access to the SERVICE_STATUS
+	std::mutex m_statuslock;
 };
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
@@ -331,7 +322,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 	ServiceHarness<MyService> runner;
 	runner.Start(L"MyService", 1, 1.0, 11, svctl::tstring(L"sweet"), 14, L"last");
-	runner.WaitForStatus(ServiceStatus::Running);
+	bool success = runner.WaitForStatus(ServiceStatus::Running);
 	runner.Stop();
 	SERVICE_STATUS status = runner.Status;
 	runner.WaitForStatus(ServiceStatus::Stopped);

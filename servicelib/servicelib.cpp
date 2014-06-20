@@ -382,12 +382,13 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 			IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
 		}
 
-		// Derived service class startup
+		// Invoke derived class startup; service is running when that come back
 		OnStart(argc, argv);
-
-		// Service is now running; wait for the STOP event object to be signaled
 		SetStatus(ServiceStatus::Running);
+
+		// Block this thread until the service is stopped then set a final status
 		WaitForSingleObject(m_stopsignal, INFINITE);
+		SetStatus(ServiceStatus::Stopped);
 	}
 
 	catch(winexception& ex) { 
@@ -405,6 +406,8 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 	}
 
 	// Unbind all of the service parameters and close the parameters registry key
+	//
+	// TODO: moved these here on purpose, but should this be done before setting SERVICE_STOPPED?
 	IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
 	if(keyparams) RegCloseKey(keyparams);
 }

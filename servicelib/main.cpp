@@ -4,6 +4,9 @@
 #include "stdafx.h"
 #include "servicelib.h"
 #include "resource.h"
+#include <mutex>
+#include <condition_variable>
+
 
 // MinimalService Sample
 //
@@ -56,20 +59,23 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
-		std::async(std::launch::async, [=]() { 
-		
-			while(true) {
-				svctl::tstring param = m_paramtestsz;
-				OutputDebugString(param.c_str());
-				OutputDebugString(_T("\r\n"));
-				Sleep(100);
-			}
-		});
+		//Sleep(5000);
+
+		//std::async(std::launch::async, [=]() { 
+		//
+		//	while(true) {
+		//		svctl::tstring param = m_paramtestsz;
+		//		OutputDebugString(param.c_str());
+		//		OutputDebugString(_T("\r\n"));
+		//		Sleep(100);
+		//	}
+		//});
 
 	}
 
 	void OnStop(void)
 	{
+		//Sleep(5000);
 		int x = 123;
 	}
 
@@ -119,21 +125,69 @@ public:
 		Start(std::vector<svctl::tstring> { servicename }, arguments...);
 	}
 
+	DWORD Control(ServiceControl control)
+	{
+		return Control(control, 0, nullptr);
+	}
+
+	// This isn't something a normal client can do ... but useful in the harness
+	DWORD Control(ServiceControl control, DWORD eventtype, void* eventdata)
+	{
+	}
+
 	DWORD Stop(void)
 	{
+		// watch for ERROR_SERVICE_REQUEST_TIMEOUT - invoke handler asynchronously
+		// with a signal and wait on that for 30 seconds
+
+		// SERVICE_STOPPED --> ERROR_SERVICE_NOT_ACTIVE (always)
+		// SERVICE_STOP_PENDING --> ERROR_SERVICE_CANNOT_ACCEPT_CTRL  (always)
+
+		// SERVICE_START_PENDING --> anything but STOP --> ERROR_SERVICE_CANNOT_ACCEPT_CTRL
+		
+		// else check mask
+
+
+		//if(!m_mainthread.joinable()) return ERROR_SERVICE_NOT_ACTIVE;
+
+		//if(m_status.dwCurrentState == SERVICE_STOPPED) return ERROR_SERVICE_CANNOT_ACCEPT_CTRL;
+		//if((m_status.dwCurrentState == SERVICE_START_PENDING) || (m_status.dwCurrentState == SERVICE_STOP_PENDING)) return ERROR_SERVICE_CANNOT_ACCEPT_CTRL;
+
+		//// Check to see if the service accepts the STOP control
+		//if((m_status.dwControlsAccepted & SERVICE_ACCEPT_STOP) != SERVICE_ACCEPT_STOP) return ERROR_INVALID_SERVICE_CONTROL;
+
 		return m_handler(static_cast<DWORD>(ServiceControl::Stop), 0, nullptr, m_context);
+	}
+
+	// WaitForStatus
+	//
+	// Waits for the service to reach a specified status
+
+	//void WaitForStatus(ServiceStatus status)
+	//{
+	//	// Just continue to wait forever and ever until the status is reached
+	//	while(!WaitForStatus(status, INFINITE)) {}
+	//}
+
+	bool WaitForStatus(ServiceStatus status) //, uint32_t waithint)
+	{
+		std::unique_lock<std::mutex> critsec(m_statuslock);
+		m_statuschanged.wait(critsec, [=]() { return static_cast<ServiceStatus>(m_status.dwCurrentState) == status; });
+
+		return true;
 	}
 
 	void WaitForStop(void)
 	{
+		// this really isn't quite right, but works for now
 		m_mainthread.join();
 	}
 
 	// Status
 	//
-	// Gets the current service status (by value, this is a copy of it)
+	// Gets a copy of the current service status
 	__declspec(property(get=getStatus)) SERVICE_STATUS Status;
-	SERVICE_STATUS getStatus(void) const { svctl::lock cs(m_lock); return m_status; }
+	SERVICE_STATUS getStatus(void) { std::lock_guard<std::mutex> critsec(m_statuslock); return m_status; }
 
 private:
 
@@ -201,7 +255,7 @@ private:
 		// Define the status change callback for this harness instance
 		svctl::set_status_func statusfunc = ([=](SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status) -> BOOL { 
 
-			svctl::lock cs(m_lock);					// Synchronize with harness instance members
+			std::unique_lock<std::mutex> critsec(m_statuslock);
 
 			// Ensure that the handle provided is actually the address of this harness instance
 			_ASSERTE(reinterpret_cast<ServiceHarness*>(handle) == this);
@@ -210,8 +264,10 @@ private:
 			// When the service sets SERVICE_START_PENDING, it's OK to unblock the Start() function
 			if(status->dwCurrentState == SERVICE_START_PENDING) m_startsignal.Set();
 
-			// Copy the SERVICE_STATUS structure into the local member variable
-			m_status = *status;
+			m_status = *status;						// Copy the new SERVICE_STATUS
+			
+			critsec.unlock();						// Release the critical section
+			m_statuschanged.notify_all();			// Notify the status has been changed
 
 			return TRUE;
 		});
@@ -245,10 +301,13 @@ private:
 	// Service control handler callback function pointer
 	LPHANDLER_FUNCTION_EX m_handler = nullptr;
 		
+	std::mutex m_statuslock;
+	std::condition_variable m_statuschanged;
+
 	// m_lock
 	//
 	// Synchronization object
-	svctl::critical_section m_lock;
+	//svctl::critical_section m_lock;
 		
 	// m_mainthread
 	//
@@ -264,6 +323,11 @@ private:
 	//
 	// Current service status
 	SERVICE_STATUS m_status;
+
+	// m_statussignal
+	//
+	// Signaled anytime the service status has changed
+	svctl::signal<svctl::signal_type::AutomaticReset> m_statussignal;
 };
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
@@ -281,9 +345,11 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 	ServiceHarness<MyService> runner;
 	runner.Start(L"MyService", 1, 1.0, 11, svctl::tstring(L"sweet"), 14, L"last");
-	Sleep(5000);
+	runner.WaitForStatus(ServiceStatus::Running);
 	runner.Stop();
-	runner.WaitForStop();
+	SERVICE_STATUS status = runner.Status;
+	runner.WaitForStatus(ServiceStatus::Stopped);
+	runner.WaitForStop();	// remove me
 
 	///////// TESTING
 	// returns when stopped

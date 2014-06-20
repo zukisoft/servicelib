@@ -107,17 +107,80 @@ public:
 	// Destructor
 	~ServiceHarness()=default;
 
+	// Start
+	//
+	// Starts the service, optionally specifying a variadic set of command line arguments.
+	// Arguments can be C-style strings, fundamental data types, or svctl::tstring references
+	template <typename... _arguments>
+	void Start(LPCTSTR servicename, const _arguments&... arguments)
+	{
+		// Construct a vector<> for the arguments starting with the service name
+		// and recursively invoke one of the variadic overloads until done
+		Start(std::vector<svctl::tstring> { servicename }, arguments...);
+	}
 
-	// TODO: make public Start() variadic instead, argc/argv version should be private
+	DWORD Stop(void)
+	{
+		return m_handler(static_cast<DWORD>(ServiceControl::Stop), 0, nullptr, m_context);
+	}
 
-	void Start(int argc, LPTSTR* argv)
+	void WaitForStop(void)
+	{
+		m_mainthread.join();
+	}
+
+	// Status
+	//
+	// Gets the current service status (by value, this is a copy of it)
+	__declspec(property(get=getStatus)) SERVICE_STATUS Status;
+	SERVICE_STATUS getStatus(void) const { svctl::lock cs(m_lock); return m_status; }
+
+private:
+
+	ServiceHarness(const ServiceHarness&)=delete;
+	ServiceHarness& operator=(const ServiceHarness&)=delete;
+
+	// Start (variadic)
+	//
+	// Recursive variadic function, converts for a fundamental type argument
+	template <typename _next, typename... _remaining>
+	typename std::enable_if<std::is_fundamental<_next>::value, void>::type
+	Start(std::vector<svctl::tstring>& argvector, const _next& next, const _remaining&... remaining)
+	{
+		argvector.push_back(to_tstring(next));
+		Start(argvector, remaining...);
+	}
+
+	// Start (variadic)
+	//
+	// Recursive variadic function, processes an svctl::tstring type argument
+	template <typename... _remaining>
+	void Start(std::vector<svctl::tstring>& argvector, const svctl::tstring& next, const _remaining&... remaining)
+	{
+		argvector.push_back(next);
+		Start(argvector, remaining...);
+	}
+	
+	// Start (variadic)
+	//
+	// Recursive variadic function, processes a generic text C-style string pointer
+	template <typename... _remaining>
+	void Start(std::vector<svctl::tstring>& argvector, const svctl::tchar_t* next, const _remaining&... remaining)
+	{
+		argvector.push_back(next);
+		Start(argvector, remaining...);
+	}
+	
+	// Start (variadic)
+	//
+	// Final overload in the variadic chain for Start()
+	void Start(std::vector<svctl::tstring>& argvector)
 	{
 		// If the main thread has already been created, the service has already been started
 		if(m_mainthread.joinable()) throw svctl::winexception(ERROR_SERVICE_ALREADY_RUNNING);
 
 		// There is an expectation that argv[0] is set to the service name
-		if(argc <= 0) throw svctl::winexception(E_INVALIDARG);
-		if((argv == nullptr) || (argv[0] == nullptr) || (*(argv[0]) == _T('\0'))) throw svctl::winexception(E_INVALIDARG);
+		if((argvector.size() == 0) || (argvector[0].length() == 0)) throw svctl::winexception(E_INVALIDARG);
 
 		// Reset the signal object that identifies when the service has set it's initial status and we can return
 		m_startsignal.Reset();
@@ -153,38 +216,24 @@ public:
 			return TRUE;
 		});
 
-		// Services are designed to be called on their own thread that will block until it's stopped
+		// Services are designed to be called on their own thread
 		m_mainthread = std::move(std::thread([=]() {
 
+			// Create a copy of the arguments vector local to this thread so it won't be destroyed
+			// prematurely, and convert it into an argv-style array of generic text string pointers
+			std::vector<svctl::tstring> arguments(argvector);
+			std::vector<svctl::tchar_t*> argv;
+			for(const auto& arg: arguments) argv.push_back(const_cast<svctl::tchar_t*>(arg.c_str()));
+			argv.push_back(nullptr);
+
+			// Create the context for the service using the lambdas defined above and invoke LocalMain()
 			svctl::service_context context = { ServiceProcessType::Unique, registerfunc, statusfunc };
-			_service::LocalMain<_service>(argc, argv, context);
+			_service::LocalMain<_service>(argv.size() - 1, argv.data(), context);
 		}));
 
 		// Wait up to 30 seconds for the service to set SERVICE_START_PENDING before giving up
-		if(WaitForSingleObject(m_startsignal, 30000) == WAIT_TIMEOUT) 
-			throw svctl::winexception(ERROR_SERVICE_REQUEST_TIMEOUT);
+		if(WaitForSingleObject(m_startsignal, 30000) == WAIT_TIMEOUT) throw svctl::winexception(ERROR_SERVICE_REQUEST_TIMEOUT);
 	}
-
-	DWORD Stop(void)
-	{
-		return m_handler(static_cast<DWORD>(ServiceControl::Stop), 0, nullptr, m_context);
-	}
-
-	void WaitForStop(void)
-	{
-		m_mainthread.join();
-	}
-
-	// Status
-	//
-	// Gets the current service status (by value, this is a copy of it)
-	__declspec(property(get=getStatus)) SERVICE_STATUS Status;
-	SERVICE_STATUS getStatus(void) const { svctl::lock cs(m_lock); return m_status; }
-
-private:
-
-	ServiceHarness(const ServiceHarness&)=delete;
-	ServiceHarness& operator=(const ServiceHarness&)=delete;
 
 	// m_context
 	//
@@ -217,12 +266,6 @@ private:
 	SERVICE_STATUS m_status;
 };
 
-//template <class _service>
-//void* ServiceHarness<_service>::s_context;
-//
-//template <class _service>
-//std::function<DWORD(DWORD, DWORD, LPVOID, LPVOID)> ServiceHarness<_service>::s_handler;
-
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
 {
 
@@ -234,10 +277,10 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	LPTSTR myargv[] = { L"MyService",  L"sweeeet - argument number 2" };
+	//LPTSTR myargv[] = { L"MyService",  L"sweeeet - argument number 2" };
 
 	ServiceHarness<MyService> runner;
-	runner.Start(1, myargv);
+	runner.Start(L"MyService", 1, 1.0, 11, svctl::tstring(L"sweet"), 14, L"last");
 	Sleep(5000);
 	runner.Stop();
 	runner.WaitForStop();

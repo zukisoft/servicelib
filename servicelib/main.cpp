@@ -104,23 +104,15 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	//LPTSTR myargv[] = { L"MyService",  L"sweeeet - argument number 2" };
-
 	ServiceHarness<MyService> runner;
 	runner.Start(L"MyService", 1, 1.0, 11, svctl::tstring(L"sweet"), 14, L"last");
-	bool success = runner.WaitForStatus(ServiceStatus::Running);
-	runner.Stop();
-	SERVICE_STATUS status = runner.Status;
-	runner.WaitForStatus(ServiceStatus::Stopped);
-	runner.WaitForStop();	// remove me
+	if(runner.CanStop) runner.Stop();
 
-	///////// TESTING
-	// returns when stopped
-
-	// could do ServiceTable.DispatchLocal();
-	// local_dispatcher::Start("MyService");
-	// local_dispatcher::Control(handle, SERVICE_CONTROL_PAUSE, 0, nullptr);
-	// local_dispatcher::WaitForStop("MyService", "MyService2")
+	///runner.Start(L"MyService");
+	
+	// TODO -- need to find a replacement for this, it called m_mainthread.join(),
+	// perhaps a runner.Recycle() or something that will join on the thread
+	//runner.WaitForStop();
 	
 	return 0;
 

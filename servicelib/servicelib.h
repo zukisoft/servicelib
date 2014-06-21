@@ -773,7 +773,6 @@ namespace svctl {
 		// LocalMain
 		//
 		// Entry point when the service is executed as an application
-	public:			// TODO REMOVE ME
 		template <class _derived>
 		static void LocalMain(DWORD argc, LPTSTR* argv, const service_context& context)
 		{
@@ -783,7 +782,6 @@ namespace svctl {
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
 			instance->Main(static_cast<int>(argc), argv, context);
 		}
-	protected:		// TODO REMOVE ME
 
 		// OnStart
 		//
@@ -928,26 +926,24 @@ namespace svctl {
 	
 		// Constructor / Destructor
 		service_harness();
-
-		// TODO: this needs an implementation to try and stop the service
-		// (or just kill the main thread)
-		virtual ~service_harness()=default;
+		virtual ~service_harness();
 
 		// Continue
 		//
 		// Wrapper around SendControl(ServiceControl::Continue)
 		void Continue(void);
 
-		////
-		DWORD SendControl(ServiceControl control) { return SendControl(control, 0, nullptr); }
-		DWORD SendControl(ServiceControl control, DWORD eventtype, void* eventdata);
-		////
-		
 		// Pause
 		//
 		// Wrapper around SendControl(ServiceControl::Pause)
 		void Pause(void);
 
+		// SendControl
+		//
+		// Sends a control code to the service
+		DWORD SendControl(ServiceControl control) { return SendControl(control, 0, nullptr); }
+		DWORD SendControl(ServiceControl control, DWORD eventtype, void* eventdata);
+		
 		// Start
 		//
 		// Starts the service, optionally specifying a variadic set of command line arguments.
@@ -963,7 +959,6 @@ namespace svctl {
 
 		// Stop
 		//
-		// Wrapper around SendControl(ServiceControl::Stop)
 		void Stop(void);
 
 		// WaitForStatus
@@ -971,10 +966,23 @@ namespace svctl {
 		// Waits for the service to reach the specified status
 		bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE);
 
-		/////
-		// kill this; but need a way to .join() the main thread - don't want to use destructor
-		void WaitForStop(void);
-		////
+		// CanContinue
+		//
+		// Determines if the service can be continued
+		__declspec(property(get=getCanContinue)) bool CanContinue;
+		bool getCanContinue(void);
+
+		// CanPause
+		//
+		// Determines if the service can be paused
+		__declspec(property(get=getCanPause)) bool CanPause;
+		bool getCanPause(void);
+
+		// CanStop
+		//
+		// Determines if the service can be stopped
+		__declspec(property(get=getCanStop)) bool CanStop;
+		bool getCanStop(void);
 
 		// Status
 		//
@@ -993,6 +1001,11 @@ namespace svctl {
 
 		service_harness(const service_harness&)=delete;
 		service_harness& operator=(const service_harness&)=delete;
+
+		// ServiceControlAccepted (static)
+		//
+		// Checks a ServiceControl against a SERVICE_ACCEPTS_XXXX mask
+		static bool ServiceControlAccepted(ServiceControl control, DWORD mask);
 
 		// Start (variadic)
 		//
@@ -1216,6 +1229,34 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// ::ServiceHarness<>
+//
+// Template version of svctl::service_harness
+
+template <class _service>
+class ServiceHarness : public svctl::service_harness
+{
+public:
+
+	// Constructor / Destructor
+	ServiceHarness()=default;
+	virtual ~ServiceHarness()=default;
+
+private:
+
+	ServiceHarness(const ServiceHarness&)=delete;
+	ServiceHarness& operator=(const ServiceHarness&)=delete;
+
+	// LaunchService (service_harness)
+	//
+	// Launches the derived service by invoking it's LocalMain entry point
+	virtual void LaunchService(int argc, LPTSTR* argv, const svctl::service_context& context)
+	{
+		_service::LocalMain<_service>(argc, argv, context);
+	}
+};
+
+//-----------------------------------------------------------------------------
 // ::Service<>
 //
 // Template version of svctl::service
@@ -1224,6 +1265,7 @@ template <class _derived>
 class Service : public svctl::service
 {
 friend struct ServiceTableEntry<_derived>;
+friend class ServiceHarness<_derived>;
 public:
 
 	// Constructor / Destructor
@@ -1262,34 +1304,6 @@ private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
-};
-
-//-----------------------------------------------------------------------------
-// ::ServiceHarness<>
-//
-// Template version of svctl::service_harness
-
-template <class _service>
-class ServiceHarness : public svctl::service_harness
-{
-public:
-
-	// Constructor / Destructor
-	ServiceHarness()=default;
-	virtual ~ServiceHarness()=default;
-
-private:
-
-	ServiceHarness(const ServiceHarness&)=delete;
-	ServiceHarness& operator=(const ServiceHarness&)=delete;
-
-	// LaunchService (service_harness)
-	//
-	// Launches the derived service by invoking it's LocalMain entry point
-	virtual void LaunchService(int argc, LPTSTR* argv, const svctl::service_context& context)
-	{
-		_service::LocalMain<_service>(argc, argv, context);
-	}
 };
 
 // CONTROL_HANDLER_MAP

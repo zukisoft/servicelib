@@ -44,9 +44,6 @@ SOFTWARE.
 
 >> HOW TO DEBUG SERVICES
 
->> STUFF IN SVCTL THAT CAN BE USED
-- svctl::tstring
-
 
 PARAMETERS
 ----------
@@ -134,3 +131,9 @@ if the parameter was not successfully bound to the service's Parameters registry
 method will do nothing.  Detection of a successful load from the registry can be accomplished
 by checking the IsDefaulted property of the parameter variable.  This will be set to false once
 the value has been loaded from the registry at least once
+
+
+SERVICE HARNESS
+---------------
+
+TODO: words, this is the "run as application" harness, almost finished then document it here

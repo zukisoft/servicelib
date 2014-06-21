@@ -31,10 +31,12 @@
 
 // Standard Template Library
 #include <array>
+#include <condition_variable>
 #include <functional>
 #include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <exception>
 #include <string>
 #include <thread>
@@ -901,56 +903,117 @@ namespace svctl {
 		signal<signal_type::ManualReset> m_stopsignal;
 	};
 
-	// svctl::local_service
+	// svctl::service_harness
 	//
-	// TODO: words
-	class local_service
+	// Test harness to execute a service as an application
+	class service_harness
 	{
 	public:
+	
+		// Constructor / Destructor
+		service_harness();
+		virtual ~service_harness()=default;
 
-		local_service(LPHANDLER_FUNCTION_EX handler, void* context) : m_handler(handler), m_context(context)
+		// Start
+		//
+		// Starts the service, optionally specifying a variadic set of command line arguments.
+		// Arguments can be C-style strings, fundamental data types, or tstring references
+		template <typename... _arguments>
+		void Start(LPCTSTR servicename, const _arguments&... arguments)
 		{
-			// todo: validate arguments and throw winexception() if no good
+			// Construct a vector<> for the arguments starting with the service name
+			// and recursively invoke one of the variadic overloads until done
+			std::vector<tstring> argvector { servicename };
+			Start(argvector, arguments...);
 		}
 
-		~local_service()=default;
+		DWORD Control(ServiceControl control);
+		DWORD Control(ServiceControl control, DWORD eventtype, void* eventdata);
+		DWORD Stop(void);
 
-		// SERVICE_STATUS_HANDLE typecasting operator
-		operator SERVICE_STATUS_HANDLE() const;
+		bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE);
+		void WaitForStop(void);
 
 		// Status
 		//
-		// Gets/Sets the current service status
+		// Gets a copy of the current service status
+		__declspec(property(get=getStatus)) SERVICE_STATUS Status;
+		SERVICE_STATUS getStatus(void) { std::lock_guard<std::mutex> critsec(m_statuslock); return m_status; }
 
-		// TODO: move to cpp and make thread-safe (this is why it's by value)
-		__declspec(property(get=getStatus, put=putStatus)) SERVICE_STATUS Status;
-		SERVICE_STATUS getStatus(void);
-		void putStatus(SERVICE_STATUS value);
+	protected:
+
+		virtual void LaunchService(int argc, LPTSTR* argv, const service_context& context) = 0;
 
 	private:
 
-		local_service(const local_service&)=delete;
-		local_service& operator=(const local_service&)=delete;
+		service_harness(const service_harness&)=delete;
+		service_harness& operator=(const service_harness&)=delete;
+
+		// Start (variadic)
+		//
+		// Recursive variadic function, converts for a fundamental type argument
+		template <typename _next, typename... _remaining>
+		typename std::enable_if<std::is_fundamental<_next>::value, void>::type
+		Start(std::vector<tstring>& argvector, const _next& next, const _remaining&... remaining)
+		{
+			argvector.push_back(to_tstring(next));
+			Start(argvector, remaining...);
+		}
+
+		// Start (variadic)
+		//
+		// Recursive variadic function, processes an tstring type argument
+		template <typename... _remaining>
+		void Start(std::vector<tstring>& argvector, const tstring& next, const _remaining&... remaining)
+		{
+			argvector.push_back(next);
+			Start(argvector, remaining...);
+		}
+	
+		// Start (variadic)
+		//
+		// Recursive variadic function, processes a generic text C-style string pointer
+		template <typename... _remaining>
+		void Start(std::vector<tstring>& argvector, const tchar_t* next, const _remaining&... remaining)
+		{
+			argvector.push_back(next);
+			Start(argvector, remaining...);
+		}
+	
+		// Start (variadic)
+		//
+		// Final overload in the variadic chain for Start()
+		void Start(std::vector<tstring>& argvector);
 
 		// m_context
 		//
-		// Context pointer passed into the LPHANDLER_FUNCTION_EX callback
-		const void* m_context;
-
-		// m_lock
-		//
-		// Synchronization object
-		critical_section m_lock;
+		// Context pointer registered for the service control handler
+		void* m_context = nullptr;
 
 		// m_handler
 		//
-		// Pointer to the service control handler callback
-		const LPHANDLER_FUNCTION_EX m_handler;
+		// Service control handler callback function pointer
+		LPHANDLER_FUNCTION_EX m_handler = nullptr;
+
+		// m_mainthread
+		//
+		// Main service thread
+		std::thread m_mainthread;
 
 		// m_status
 		//
 		// Current service status
 		SERVICE_STATUS m_status;
+
+		// m_statuschanged
+		//
+		// Condition variable set when service status has changed
+		std::condition_variable m_statuschanged;
+
+		// m_statuslock
+		//
+		// Critical section to serialize access to the SERVICE_STATUS
+		std::mutex m_statuslock;
 	};
 
 } // namespace svctl
@@ -1147,6 +1210,34 @@ private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
+};
+
+//-----------------------------------------------------------------------------
+// ::ServiceHarness<>
+//
+// Template version of svctl::service_harness
+
+template <class _service>
+class ServiceHarness : public svctl::service_harness
+{
+public:
+
+	// Constructor / Destructor
+	ServiceHarness()=default;
+	virtual ~ServiceHarness()=default;
+
+private:
+
+	ServiceHarness(const ServiceHarness&)=delete;
+	ServiceHarness& operator=(const ServiceHarness&)=delete;
+
+	// LaunchService (service_harness)
+	//
+	// Launches the derived service by invoking it's LocalMain entry point
+	virtual void LaunchService(int argc, LPTSTR* argv, const svctl::service_context& context)
+	{
+		_service::LocalMain<_service>(argc, argv, context);
+	}
 };
 
 // CONTROL_HANDLER_MAP

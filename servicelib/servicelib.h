@@ -184,17 +184,27 @@ namespace svctl {
 	// ANSI string character type
 	typedef char			char_t;
 
-	// svctl::tchar_t, svctl::tstring, 
+	// svctl::tchar_t, svctl::tstring, svctl::to_tstring<>
 	//
-	// General text character and STL string types
+	// Generic text character, STL string and conversion
 #ifndef _UNICODE
 	typedef char			tchar_t;
 	typedef std::string		tstring;
-	#define to_tstring		std::to_string
+
+	template <typename _type>
+	inline typename std::enable_if<std::is_fundamental<_type>::value, tstring>::type to_tstring(_type value) 
+	{
+		return std::to_string(value);
+	}
 #else
 	typedef wchar_t			tchar_t;
 	typedef std::wstring	tstring;
-	#define to_tstring		std::to_wstring
+
+	template <typename _type>
+	inline typename std::enable_if<std::is_fundamental<_type>::value, tstring>::type to_tstring(_type value) 
+	{
+		return std::to_wstring(value);
+	}
 #endif
 
 	// svctl::register_handler_func
@@ -279,6 +289,8 @@ namespace svctl {
 	// svctl::critical_section
 	//
 	// Win32 CRITICAL_SECTION wrapper class
+	//
+	// TODO: Remove this and replace with std::mutex
 	class critical_section
 	{
 	public:
@@ -311,6 +323,8 @@ namespace svctl {
 	// svctl::lock
 	//
 	// Provides an automatic enter/leave wrapper around a critical_section
+	//
+	// TODO: remove this
 	class lock
 	{
 	public:
@@ -365,6 +379,8 @@ namespace svctl {
 	// svctl::signal
 	//
 	// Wrapper around an unnamed Win32 Event synchronization object
+	//
+	// TODO: investigate replacing this with std::condition_variable
 	template<signal_type _type>
 	class signal
 	{
@@ -917,7 +933,7 @@ namespace svctl {
 		// Start
 		//
 		// Starts the service, optionally specifying a variadic set of command line arguments.
-		// Arguments can be C-style strings, fundamental data types, or tstring references
+		// (Arguments can be C-style strings, fundamental data types, or tstring references)
 		template <typename... _arguments>
 		void Start(LPCTSTR servicename, const _arguments&... arguments)
 		{
@@ -931,7 +947,11 @@ namespace svctl {
 		DWORD Control(ServiceControl control, DWORD eventtype, void* eventdata);
 		DWORD Stop(void);
 
+		// WaitForStatus
+		//
+		// Waits for the service to reach the specified status
 		bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE);
+
 		void WaitForStop(void);
 
 		// Status
@@ -942,6 +962,9 @@ namespace svctl {
 
 	protected:
 
+		// LaunchService
+		//
+		// Invokes the derived service class' LocalMain() entry point
 		virtual void LaunchService(int argc, LPTSTR* argv, const service_context& context) = 0;
 
 	private:
@@ -980,7 +1003,7 @@ namespace svctl {
 			Start(argvector, remaining...);
 		}
 	
-		// Start (variadic)
+		// Start
 		//
 		// Final overload in the variadic chain for Start()
 		void Start(std::vector<tstring>& argvector);

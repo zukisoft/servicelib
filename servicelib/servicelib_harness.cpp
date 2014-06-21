@@ -14,13 +14,24 @@ service_harness::service_harness()
 	m_status.dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
 }
 
-DWORD service_harness::Control(ServiceControl control)
+//-----------------------------------------------------------------------------
+// service_harness::Continue
+//
+// Sends SERVICE_CONTROL_CONTINUE to the service, throws an exception if the
+// service does not accept the control
+//
+// Arguments:
+//
+//	NONE
+
+void service_harness::Continue(void)
 {
-	return Control(control, 0, nullptr);
+	DWORD result = SendControl(ServiceControl::Continue);
+	if(result != ERROR_SUCCESS) throw winexception(result);
 }
 
 // This isn't something a normal client can do ... but useful in the harness
-DWORD service_harness::Control(ServiceControl control, DWORD eventtype, void* eventdata)
+DWORD service_harness::SendControl(ServiceControl control, DWORD eventtype, void* eventdata)
 {
 	(control);
 	(eventdata);
@@ -29,8 +40,24 @@ DWORD service_harness::Control(ServiceControl control, DWORD eventtype, void* ev
 	return 0;
 }
 
-DWORD service_harness::Stop(void)
+//-----------------------------------------------------------------------------
+// service_harness::Pause
+//
+// Sends SERVICE_CONTROL_PAUSE to the service, throws an exception if the
+// service does not accept the control
+//
+// Arguments:
+//
+//	NONE
+
+void service_harness::Pause(void)
 {
+	DWORD result = SendControl(ServiceControl::Pause);
+	if(result != ERROR_SUCCESS) throw winexception(result);
+}
+
+//DWORD service_harness::Stop(void)
+//{
 	// watch for ERROR_SERVICE_REQUEST_TIMEOUT - invoke handler asynchronously
 	// with a signal and wait on that for 30 seconds
 
@@ -50,21 +77,23 @@ DWORD service_harness::Stop(void)
 	//// Check to see if the service accepts the STOP control
 	//if((m_status.dwControlsAccepted & SERVICE_ACCEPT_STOP) != SERVICE_ACCEPT_STOP) return ERROR_INVALID_SERVICE_CONTROL;
 
-	return m_handler(static_cast<DWORD>(ServiceControl::Stop), 0, nullptr, m_context);
-}
-
-bool service_harness::WaitForStatus(ServiceStatus status, uint32_t timeout)
-{
-	std::unique_lock<std::mutex> critsec(m_statuslock);
-	return m_statuschanged.wait_until(critsec, std::chrono::system_clock::now() + std::chrono::milliseconds(timeout),
-		[=]() { return static_cast<ServiceStatus>(m_status.dwCurrentState) == status; });
-}
+	//return m_handler(static_cast<DWORD>(ServiceControl::Stop), 0, nullptr, m_context);
+//}
 
 void service_harness::WaitForStop(void)
 {
 	// this really isn't quite right, but works for now
 	m_mainthread.join();
 }
+
+//-----------------------------------------------------------------------------
+// service_harness::Start (private)
+//
+// Starts the service
+//
+// Arguments:
+//
+//	argvector		- vector<> of command line argument strings
 
 void service_harness::Start(std::vector<tstring>& argvector)
 {
@@ -103,7 +132,7 @@ void service_harness::Start(std::vector<tstring>& argvector)
 		return TRUE;
 	});
 
-	// Services are designed to be called on their own thread
+	// Create the main service thread and launch it
 	m_mainthread = std::move(std::thread([=]() {
 
 		// Create a copy of the arguments vector local to this thread so it won't be destroyed
@@ -121,6 +150,43 @@ void service_harness::Start(std::vector<tstring>& argvector)
 	// Wait up to 30 seconds for the service to set SERVICE_START_PENDING before giving up
 	if(!WaitForStatus(ServiceStatus::StartPending, 30000)) throw winexception(ERROR_SERVICE_REQUEST_TIMEOUT);
 }
+
+//-----------------------------------------------------------------------------
+// service_harness::Stop
+//
+// Sends SERVICE_CONTROL_STOP to the service, throws an exception if the
+// service does not accept the control
+//
+// Arguments:
+//
+//	NONE
+
+void service_harness::Stop(void)
+{
+	DWORD result = SendControl(ServiceControl::Stop);
+	if(result != ERROR_SUCCESS) throw winexception(result);
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::WaitForStatus
+//
+// Waits for the service to reach the specified status
+//
+// Arguments:
+//
+//	status		- Service status to wait for
+//	timeout		- Amount of time, in milliseconds, to wait before failing
+
+bool service_harness::WaitForStatus(ServiceStatus status, uint32_t timeout)
+{
+	std::unique_lock<std::mutex> critsec(m_statuslock);
+
+	// Wait for the condition variable to be trigged with the service status caller is looking for
+	return m_statuschanged.wait_until(critsec, std::chrono::system_clock::now() + std::chrono::milliseconds(timeout),
+		[=]() { return static_cast<ServiceStatus>(m_status.dwCurrentState) == status; });
+}
+
+//////////////////////
 
 };
 

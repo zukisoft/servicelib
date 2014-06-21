@@ -928,7 +928,25 @@ namespace svctl {
 	
 		// Constructor / Destructor
 		service_harness();
+
+		// TODO: this needs an implementation to try and stop the service
+		// (or just kill the main thread)
 		virtual ~service_harness()=default;
+
+		// Continue
+		//
+		// Wrapper around SendControl(ServiceControl::Continue)
+		void Continue(void);
+
+		////
+		DWORD SendControl(ServiceControl control) { return SendControl(control, 0, nullptr); }
+		DWORD SendControl(ServiceControl control, DWORD eventtype, void* eventdata);
+		////
+		
+		// Pause
+		//
+		// Wrapper around SendControl(ServiceControl::Pause)
+		void Pause(void);
 
 		// Start
 		//
@@ -943,16 +961,20 @@ namespace svctl {
 			Start(argvector, arguments...);
 		}
 
-		DWORD Control(ServiceControl control);
-		DWORD Control(ServiceControl control, DWORD eventtype, void* eventdata);
-		DWORD Stop(void);
+		// Stop
+		//
+		// Wrapper around SendControl(ServiceControl::Stop)
+		void Stop(void);
 
 		// WaitForStatus
 		//
 		// Waits for the service to reach the specified status
 		bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE);
 
+		/////
+		// kill this; but need a way to .join() the main thread - don't want to use destructor
 		void WaitForStop(void);
+		////
 
 		// Status
 		//
@@ -1048,6 +1070,13 @@ namespace svctl {
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// ::ServiceException
+//
+// Global namespace alias for svctl::winexception
+
+using ServiceException = svctl::winexception;
+
+//-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
 //
 // Specialization of the svctl::control_handler class that allows the derived
@@ -1104,7 +1133,7 @@ public:
 		else if(m_void_handler_ex) m_void_handler_ex(derived, eventtype, eventdata);
 		else if(m_result_handler) result = m_result_handler(derived);
 		else if(m_result_handler_ex) result = m_result_handler_ex(derived, eventtype, eventdata);
-		else throw svctl::winexception(E_UNEXPECTED);
+		else throw ServiceException(E_UNEXPECTED);
 		
 		return result;
 	}	

@@ -959,6 +959,7 @@ namespace svctl {
 
 		// Stop
 		//
+		// Wrapper around SendControl(ServiceControl::Stop)
 		void Stop(void);
 
 		// WaitForStatus

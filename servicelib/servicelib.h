@@ -606,9 +606,9 @@ namespace svctl {
 		virtual ~parameter()=default;
 
 		// typecasting operator
-		operator _type() const
+		operator _type()
 		{
-			svctl::lock critsec(m_lock);
+			std::lock_guard<std::recursive_mutex> critsec(m_lock);
 			return m_value;
 		}
 
@@ -616,7 +616,7 @@ namespace svctl {
 		//
 		// Flag if the value has been defaulted or if it has been read from the registry
 		__declspec(property(get=getIsDefaulted)) bool IsDefaulted;
-		bool getIsDefaulted(void) const { svctl::lock critsec(m_lock); return m_defaulted; }
+		bool getIsDefaulted(void) const { std::lock_guard<std::recursive_mutex> critsec(m_lock); return m_defaulted; }
 
 	private:
 

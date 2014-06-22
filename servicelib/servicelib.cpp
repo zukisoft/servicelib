@@ -869,7 +869,13 @@ void service_harness::Stop(void)
 	DWORD result = SendControl(ServiceControl::Stop);
 	if(result != ERROR_SUCCESS) throw winexception(result);
 
+	// Wait for SERVICE_STOPPED and then for the main thread to finish
 	WaitForStatus(ServiceStatus::Stopped);
+	m_mainthread.join();
+
+	// Reinitialize the SERVICE_STATUS structure to the proper defaults
+	memset(&m_status, 0, sizeof(SERVICE_STATUS));
+	m_status.dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
 }
 
 //-----------------------------------------------------------------------------

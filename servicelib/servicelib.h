@@ -310,8 +310,6 @@ namespace svctl {
 	// svctl::signal
 	//
 	// Wrapper around an unnamed Win32 Event synchronization object
-	//
-	// TODO: investigate replacing this with std::condition_variable
 	template<signal_type _type>
 	class signal
 	{
@@ -861,12 +859,12 @@ namespace svctl {
 
 		// Continue
 		//
-		// Wrapper around SendControl(ServiceControl::Continue)
+		// Sends ServiceControl::Continue and waits for ServiceStatus::Running
 		void Continue(void);
 
 		// Pause
 		//
-		// Wrapper around SendControl(ServiceControl::Pause)
+		// Sends ServiceControl::Pause and waits for ServiceStatus::Paused
 		void Pause(void);
 
 		// SendControl
@@ -890,7 +888,8 @@ namespace svctl {
 
 		// Stop
 		//
-		// Wrapper around SendControl(ServiceControl::Stop)
+		// Stops the service; should be called rather than SendControl()
+		// as this also waits for the main thread and resets the status
 		void Stop(void);
 
 		// WaitForStatus

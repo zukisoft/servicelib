@@ -104,17 +104,14 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	//ServiceHarness<MyService> runner;
-	//runner.Start(L"MyService", 1, 1.0, 11, svctl::tstring(L"sweet"), 14, L"last");
-	//if(runner.CanStop) runner.Stop();
+	ServiceHarness<MyService> runner;
+	runner.Start(L"MyService", 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
+	if(runner.CanStop) runner.Stop();
 
-	///runner.Start(L"MyService");
-	
-	// TODO -- need to find a replacement for this, it called m_mainthread.join(),
-	// perhaps a runner.Recycle() or something that will join on the thread
-	//runner.WaitForStop();
-	
-	//return 0;
+	runner.Start(L"MyService");
+	runner.Stop();
+
+	return 0;
 
 	// Manual dispatching with dynamic names
 	ServiceTable services = { ServiceTableEntry<MyService>(_T("MyService")), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };

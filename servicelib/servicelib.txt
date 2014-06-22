@@ -44,9 +44,9 @@ SOFTWARE.
 
 >> HOW TO DEBUG SERVICES
 
-
-PARAMETERS
-----------
+---------------------------
+SERVICE REGISTRY PARAMETERS
+---------------------------
 
 Support for basic read-only registry-based service parameters is provided by the following
 data types that can be declared for service-local member variables:
@@ -132,8 +132,90 @@ method will do nothing.  Detection of a successful load from the registry can be
 by checking the IsDefaulted property of the parameter variable.  This will be set to false once
 the value has been loaded from the registry at least once
 
+--------------------
+SERVICE TEST HARNESS
+--------------------
 
-SERVICE HARNESS
----------------
+>>
+>> LIMITATION: Parameters do not work unless process has access to the actual service registry key,
+>> will deal with this at some point in the future by adding a way to specify a parameter loading
+>> callback method or virtual function in ServiceHarness<>
+>>
 
-TODO: words, this is the "run as application" harness, almost finished then document it here
+Services generated with the service template library can also be run under the context of a provided
+test harness class, ServiceHarness<>.  This class provides the ability to start, stop and send control
+codes to the service class.  Mimicking control codes that require event data is supported, but it's
+left up to the harness application to send in something realistic.
+
+Service command line arguments can be provided when starting the service by appending them to the
+Start(servicename) method.  This method is variadic and can accept any fundamental data type supported
+by std::to_[w]string(), a constant generic text string pointer, or a reference to an std::[w]string object:
+
+	Start(L"MyService", std::wstring(L"argumentone"), 11, 123.45, true, L"lastargument")
+
+When using the ServiceHarness<>, the provided Stop() method should be used when stopping the service
+or terminating the harness application.  Using SendControl(ServiceControl::Stop) method will not 
+wait for the main service thread to finish and will leave the ServiceHarness<> in a state that will
+prevent it from being reused by invoking Start() again.
+
+The simplest pattern for using ServiceHarness<> requires invoking the Start(servicename) method, waiting
+for some trigger to occur that will terminate the harness application, and then invoking Stop():
+
+	...
+	ServiceHarness<MyService> harness;
+	harness.Start(_T("MyServiceName"));
+	/* WAIT FOR SOME TRIGGER HERE, PERHAPS CTRL+C IF A CONSOLE APPLICATION */
+	harness.Stop();
+	...
+
+
+ServiceHarness<> Methods:
+-------------------------
+
+void Continue(void)
+	- Sends ServiceControl::Continue to the service
+	- Waits for service to reach ServiceStatus::Running
+	- Throws ServiceException& on error
+
+void Pause(void)
+	- Sends ServiceControl::Pause to the service
+	- Waits for service to reach ServiceStatus::Paused
+	- Throws ServiceException& on error
+
+DWORD SendControl(ServiceControl control)
+DWORD SendControl(ServiceControl control, DWORD eventtype, LPVOID eventdata)
+	- Sends a control code to the service, optionally specifying event information (this is not common)
+	- Returns a status code similar to Win32 API's ControlService() method, should not throw an exception
+
+void Start(LPCTSTR servicename, ...)
+	- Starts the service with the specified service name and optional command line arguments
+	- If service does not reach ServiceState::StartPending in 30 seconds, will raise an exception
+	- Waits for the service to reach ServiceStatus::Running
+	- Throws ServiceException& on error
+
+void Stop(void)
+	- Sends ServiceControl::Stop to the service
+	- Waits for service to reach ServiceStatus::Stopped
+	- Waits for the main service thread to terminate
+	- Resets the cached SERVICE_STATUS for the service
+	- Throws ServiceException& on error
+
+bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE)
+	- Waits for the service to reach the specified status
+	- Optional timeout value is specified in milliseconds
+
+
+ServiceHarness<> Properties:
+----------------------------
+
+bool CanContinue (read-only)
+	- Determines if the service is capable of accepting ServiceControl::Continue
+
+bool CanPause (read-only)
+	- Determines if the service is capable of accepting ServiceControl::Pause
+
+bool CanStop (read-only)
+	- Determines if the service is capable of accepting ServiceControl::Stop
+
+SERVICE_STATUS Status (read-only)
+	- Gets a copy of the current SERVICE_STATUS structure for the service

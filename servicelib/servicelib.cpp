@@ -69,7 +69,7 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 
 void parameter_base::Bind(HKEY key, const tchar_t* name) 
 {
-	lock critsec(m_lock);
+	std::lock_guard<std::recursive_mutex> critsec(m_lock);
 
 	m_key = key;
 	m_name = name;
@@ -84,9 +84,9 @@ void parameter_base::Bind(HKEY key, const tchar_t* name)
 //
 //	NONE
 
-bool parameter_base::IsBound(void) const
+bool parameter_base::IsBound(void)
 {
-	lock critsec(m_lock);
+	std::lock_guard<std::recursive_mutex> critsec(m_lock);
 	return (m_key != nullptr);
 }
 
@@ -101,7 +101,7 @@ bool parameter_base::IsBound(void) const
 
 void parameter_base::Unbind(void)
 {
-	lock critsec(m_lock);
+	std::lock_guard<std::recursive_mutex> critsec(m_lock);
 
 	m_key = nullptr;
 	m_name.clear();
@@ -148,7 +148,7 @@ const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 
 DWORD service::Continue(void)
 {
-	lock critsec(m_statuslock);
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
 	// Service has to be in a status of PAUSED to accept this control
 	if(m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
@@ -177,7 +177,7 @@ DWORD service::Continue(void)
 
 DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata)
 {
-	lock critsec(m_statuslock);
+	std::unique_lock<std::recursive_mutex> critsec(m_statuslock);
 
 	// Nothing should be coming in from the service control manager when stopped
 	if(m_status == ServiceStatus::Stopped) return ERROR_CALL_NOT_IMPLEMENTED;
@@ -189,7 +189,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	else if(control == ServiceControl::Continue) { Continue(); return ERROR_SUCCESS; }
 
 	// Done with messing about with the current service status; release the critsec
-	critsec.Release();
+	critsec.unlock();
 
 	// PARAMCHANGE is automatically accepted if there are any parameters in the service,
 	// but the derived class may also want to handle it; call it here but don't return
@@ -295,7 +295,7 @@ const control_handler_table& service::getHandlers(void) const
 
 DWORD service::Pause(void)
 {
-	lock critsec(m_statuslock);
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
 	// Service has to be in a status of RUNNING to accept this control
 	if(m_status != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
@@ -425,7 +425,7 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 
 void service::SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
-	lock critsec(m_statuslock);
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
@@ -454,7 +454,7 @@ void service::SetNonPendingStatus(ServiceStatus status, uint32_t win32exitcode, 
 
 void service::SetPendingStatus(ServiceStatus status)
 {
-	lock critsec(m_statuslock);
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
 	_ASSERTE(m_statusfunc);							// Needs to be set
 	_ASSERTE(!m_statusworker.joinable());			// Should not be running
@@ -510,7 +510,7 @@ void service::SetPendingStatus(ServiceStatus status)
 
 void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
 {
-	lock critsec(m_statuslock);				// Automatic CRITICAL_SECTION wrapper
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
 	// Check for a duplicate status; pending states are managed automatically
 	if(status == m_status) return;
@@ -570,7 +570,7 @@ void service::SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t s
 
 DWORD service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
 {
-	lock critsec(m_statuslock);
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
 	// Service cannot be stopped unless it's RUNNING or PAUSED, this could cause
 	// potential race conditions in the derived service class; better to block it

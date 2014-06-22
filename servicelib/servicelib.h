@@ -286,75 +286,6 @@ namespace svctl {
 	// Primitive Classes
 	//
 
-	// svctl::critical_section
-	//
-	// Win32 CRITICAL_SECTION wrapper class
-	//
-	// TODO: Remove this and replace with std::mutex
-	class critical_section
-	{
-	public:
-
-		// Constructor / Destructor
-		critical_section() { InitializeCriticalSection(&m_cs); }
-		~critical_section() { DeleteCriticalSection(&m_cs); }
-
-		// Enter
-		//
-		// Enters the critical section
-		void Enter(void) const { EnterCriticalSection(&m_cs); }
-
-		// Leave
-		//
-		// Leaves the critical section
-		void Leave(void) const { LeaveCriticalSection(&m_cs); }
-
-	private:
-
-		critical_section(const critical_section&)=delete;
-		critical_section& operator=(const critical_section& rhs)=delete;
-	
-		// m_cs
-		//
-		// Contained CRITICAL_SECTION synchronization object
-		mutable CRITICAL_SECTION m_cs;
-	};
-
-	// svctl::lock
-	//
-	// Provides an automatic enter/leave wrapper around a critical_section
-	//
-	// TODO: remove this
-	class lock
-	{
-	public:
-
-		// Constructor / Destructor
-		explicit lock(const critical_section& cs) : m_cs(cs), m_locked(true) { m_cs.Enter(); }
-		~lock() { if(m_locked) m_cs.Leave(); }
-
-		// Release
-		//
-		// Releases the critical section prior to when the object is unwound
-		void Release(void) { if(m_locked) m_cs.Leave(); m_locked = false; }
-
-	private:
-
-		lock(const lock&)=delete;
-		lock& operator=(const lock&)=delete;
-
-		// m_cs
-		//
-		// Reference to the critical_section object
-		const critical_section&	m_cs;
-
-		// m_locked
-		//
-		// Flag if the critical section is locked; used to release
-		// the critical section before the objectis unwound
-		bool m_locked;
-	};
-
 	// svctl::resstring
 	//
 	// Implements a tstring loaded from the module's string table
@@ -558,7 +489,7 @@ namespace svctl {
 		// IsBound
 		//
 		// Determines if the parameter has been bound to the registry
-		bool IsBound(void) const;
+		bool IsBound(void);
 
 		// ReadValue<trivial>
 		//
@@ -633,7 +564,7 @@ namespace svctl {
 		// m_lock
 		//
 		// Synchronization object
-		critical_section m_lock;
+		std::recursive_mutex m_lock;
 
 		// m_name
 		//
@@ -699,7 +630,7 @@ namespace svctl {
 		// Invoked in respose to a SERVICE_CONTROL_PARAM_CHANGE; loads the value
 		virtual void Load(void)
 		{
-			svctl::lock critsec(m_lock);
+			std::lock_guard<std::recursive_mutex> critsec(m_lock);
 			if(!IsBound()) return;
 
 			try { 
@@ -898,8 +829,8 @@ namespace svctl {
  
 		// m_statuslock;
 		//
-		// CRITICAL_SECTION synchronization object for status updates
-		critical_section m_statuslock;
+		// Synchronization object for status updates
+		std::recursive_mutex m_statuslock;
 
 		// m_statussignal
 		//

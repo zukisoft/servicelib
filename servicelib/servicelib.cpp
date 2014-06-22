@@ -382,13 +382,12 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 			IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
 		}
 
-		// Invoke derived class startup; service is running when that come back
+		// Invoke derived service class startup code
 		OnStart(argc, argv);
-		SetStatus(ServiceStatus::Running);
 
-		// Block this thread until the service is stopped then set a final status
+		// Service is now running, wait for the event indicating SERVICE_STOPPED has been set
+		SetStatus(ServiceStatus::Running);
 		WaitForSingleObject(m_stopsignal, INFINITE);
-		SetStatus(ServiceStatus::Stopped);
 	}
 
 	catch(winexception& ex) { 

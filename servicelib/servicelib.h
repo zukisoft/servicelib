@@ -362,80 +362,6 @@ namespace svctl {
 	// Service Classes
 	//
 
-	// svctl::service_status
-	//
-	// Wrapper around SERVICE_STATUS structure to do typecasting
-	struct service_status : public SERVICE_STATUS
-	{
-		// Instance Constructor
-		service_status() { Reset(); }
-
-		// Assignment operator
-		const service_status& operator=(const SERVICE_STATUS& rhs)
-		{ 
-			memcpy(static_cast<SERVICE_STATUS*>(this), &rhs, sizeof(SERVICE_STATUS));
-			return *this;
-		}
-
-		// Reset
-		//
-		// Resets the contents of the structure to defaults
-		void Reset(void)
-		{
-			memset(this, 0, sizeof(service_status));
-			Status = ServiceStatus::Stopped;
-		}
-
-		// AcceptedControls
-		//
-		// Gets/sets the accepted controls bitmask (not specialized)
-		__declspec(property(get=getAcceptedControls, put=putAcceptedControls)) DWORD AcceptedControls;
-		DWORD getAcceptedControls(void) const { return dwControlsAccepted; }
-		void putAcceptedControls(DWORD value) { dwControlsAccepted = value; }
-
-		// CheckPoint
-		//
-		// Gets/sets the checkpoint value for the current pending state (not specialized)
-		__declspec(property(get=getCheckPoint, put=putCheckPoint)) DWORD CheckPoint;
-		DWORD getCheckPoint(void) const { return dwCheckPoint; }
-		void putCheckPoint(DWORD value) { dwCheckPoint = value; }
-
-		// ExitCode
-		//
-		// Gets/sets the Win32 exit code (not specialized)
-		__declspec(property(get=getExitCode, put=putExitCode)) DWORD ExitCode;
-		DWORD getExitCode(void) const { return dwWin32ExitCode; }
-		void putExitCode(DWORD value) { dwWin32ExitCode = value; }
-
-		// ServiceSpecificExitCode
-		//
-		// Gets/sets the service specific exit code (not specialized)
-		__declspec(property(get=getServiceSpecificExitCode, put=putServiceSpecificExitCode)) DWORD ServiceSpecificExitCode;
-		DWORD getServiceSpecificExitCode(void) const { return dwServiceSpecificExitCode; }
-		void putServiceSpecificExitCode(DWORD value) { dwServiceSpecificExitCode = value; }
-
-		// Status
-		//
-		// Gets/sets the service status code
-		__declspec(property(get=getStatus, put=putStatus)) ServiceStatus Status;
-		ServiceStatus getStatus(void) const { return static_cast<ServiceStatus>(dwCurrentState); }
-		void putStatus(ServiceStatus value) { dwCurrentState = static_cast<DWORD>(value); }
-
-		// ProcessType
-		//
-		// Gets/sets the service process type
-		__declspec(property(get=getProcessType, put=putProcessType)) ServiceProcessType ProcessType;
-		ServiceProcessType getProcessType(void) const { return static_cast<ServiceProcessType>(dwServiceType); }
-		void putProcessType(ServiceProcessType value) { dwServiceType = static_cast<DWORD>(value); }
-
-		// WaitHint
-		//
-		// Gets/sets the wait hint for the current pending state (not specialized)
-		__declspec(property(get=getWaitHint, put=putWaitHint)) DWORD WaitHint;
-		DWORD getWaitHint(void) const { return dwWaitHint; }
-		void putWaitHint(DWORD value) { dwWaitHint = value; }
-	};
-
 	// svctl::control_handler
 	//
 	// Base class for all derived service control handlers
@@ -928,7 +854,7 @@ namespace svctl {
 	public:
 	
 		// Constructor / Destructor
-		service_harness()=default;
+		service_harness();
 		virtual ~service_harness();
 
 		// Continue
@@ -1066,7 +992,7 @@ namespace svctl {
 		// m_status
 		//
 		// Current service status
-		service_status m_status;
+		SERVICE_STATUS m_status;
 
 		// m_statuschanged
 		//

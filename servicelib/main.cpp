@@ -57,6 +57,8 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
+		//throw ServiceException(5L);
+
 		//Sleep(5000);
 
 		//std::async(std::launch::async, [=]() { 

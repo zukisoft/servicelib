@@ -153,11 +153,6 @@ by std::to_[w]string(), a constant generic text string pointer, or a reference t
 
 	Start(L"MyService", std::wstring(L"argumentone"), 11, 123.45, true, L"lastargument")
 
-When using the ServiceHarness<>, the provided Stop() method should be used when stopping the service
-or terminating the harness application.  Using SendControl(ServiceControl::Stop) method will not 
-wait for the main service thread to finish and will leave the ServiceHarness<> in a state that will
-prevent it from being reused by invoking Start() again.
-
 The simplest pattern for using ServiceHarness<> requires invoking the Start(servicename) method, waiting
 for some trigger to occur that will terminate the harness application, and then invoking Stop():
 
@@ -175,12 +170,12 @@ ServiceHarness<> Methods:
 void Continue(void)
 	- Sends ServiceControl::Continue to the service
 	- Waits for service to reach ServiceStatus::Running
-	- Throws ServiceException& on error
+	- Throws ServiceException& on error or if service stops prematurely
 
 void Pause(void)
 	- Sends ServiceControl::Pause to the service
 	- Waits for service to reach ServiceStatus::Paused
-	- Throws ServiceException& on error
+	- Throws ServiceException& on error or if service stops prematurely
 
 DWORD SendControl(ServiceControl control)
 DWORD SendControl(ServiceControl control, DWORD eventtype, LPVOID eventdata)
@@ -189,20 +184,20 @@ DWORD SendControl(ServiceControl control, DWORD eventtype, LPVOID eventdata)
 
 void Start(LPCTSTR servicename, ...)
 	- Starts the service with the specified service name and optional command line arguments
-	- If service does not reach ServiceState::StartPending in 30 seconds, will raise an exception
+	- If service does not reach ServiceStatus::StartPending in 30 seconds, will raise an exception
 	- Waits for the service to reach ServiceStatus::Running
-	- Throws ServiceException& on error
+	- Throws ServiceException& on error or if service stops prematurely
 
 void Stop(void)
 	- Sends ServiceControl::Stop to the service
 	- Waits for service to reach ServiceStatus::Stopped
-	- Waits for the main service thread to terminate
-	- Resets the cached SERVICE_STATUS for the service
-	- Throws ServiceException& on error
+	- Throws ServiceException& on error or if service stops prematurely
 
 bool WaitForStatus(ServiceStatus status, uint32_t timeout = INFINITE)
-	- Waits for the service to reach the specified status
 	- Optional timeout value is specified in milliseconds
+	- Waits for the service to reach the specified status
+	- Returns TRUE if service reached the status, false if the operation timed out
+	- Throws ServiceException& on error or if service stops prematurely
 
 
 ServiceHarness<> Properties:

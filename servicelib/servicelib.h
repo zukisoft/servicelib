@@ -44,6 +44,8 @@
 
 // Windows API
 #include <Windows.h>
+#include <rpc.h>
+#pragma comment(lib, "rpcrt4.lib")
 
 #pragma warning(push, 4)
 #pragma warning(disable:4127)			// conditional expression is constant
@@ -190,6 +192,7 @@ namespace svctl {
 #ifndef _UNICODE
 	typedef char			tchar_t;
 	typedef std::string		tstring;
+	typedef RPC_CSTR		rpc_tstr;
 
 	template <typename _type>
 	inline typename std::enable_if<std::is_fundamental<_type>::value, tstring>::type to_tstring(_type value) 
@@ -199,6 +202,7 @@ namespace svctl {
 #else
 	typedef wchar_t			tchar_t;
 	typedef std::wstring	tstring;
+	typedef RPC_WSTR		rpc_tstr;
 
 	template <typename _type>
 	inline typename std::enable_if<std::is_fundamental<_type>::value, tstring>::type to_tstring(_type value) 
@@ -234,6 +238,11 @@ namespace svctl {
 	//
 	// Global Functions
 	//
+
+	// svctl::GenerateUuid
+	//
+	// Generates a UUID tstring
+	tstring GenerateUuid(void);
 
 	// svctl::GetServiceProcessType
 	//
@@ -658,6 +667,16 @@ namespace svctl {
 	// allow for differences in service vs. local application model
 	struct service_context
 	{
+		// ParameterHive
+		//
+		// Registry hive that hosts the registry parameters key
+		HKEY ParameterHive;
+
+		// ParameterPath
+		//
+		// Defines the path to the registry parameters key
+		tstring ParameterPath;
+
 		// ProcessType
 		//
 		// Defines the service process type (unique/shared)
@@ -737,7 +756,8 @@ namespace svctl {
 
 			// When running as a regular service, the process type is read from the registry and the
 			// standard Win32 service API functions are used for registration and status reporting
-			service_context context = { GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus };
+			service_context context = { HKEY_LOCAL_MACHINE, tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters"), 
+				GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus };
 
 			// Create an instance of the derived service class and invoke ServiceMain()
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
@@ -1001,6 +1021,16 @@ namespace svctl {
 		//
 		// Main service thread
 		std::thread m_mainthread;
+
+		// m_paramskey
+		//
+		// Volatile registry parameters key
+		HKEY m_paramskey = nullptr;
+
+		// m_paramspath
+		//
+		// Path to the volatile registry parameters key
+		tstring m_paramspath;
 
 		// m_status
 		//

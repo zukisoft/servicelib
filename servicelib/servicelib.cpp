@@ -28,6 +28,36 @@
 namespace svctl {
 
 //-----------------------------------------------------------------------------
+// svctl::GenerateUuid
+//
+// Generates a UUID and converts it into a tstring
+//
+// Arguments:
+//
+//	NONE
+
+tstring GenerateUuid(void)
+{
+	UUID			uuid;				// Folder UUID 
+	rpc_tstr		uuidstr;			// Folder UUID as a string
+	RPC_STATUS		rpcstatus;			// Result from RPC function call
+
+	// Create a UUID with the RPC runtime rather than the COM runtime
+	rpcstatus = UuidCreate(&uuid);
+	if((rpcstatus != RPC_S_OK) && (rpcstatus != RPC_S_UUID_LOCAL_ONLY)) throw winexception(rpcstatus);
+
+	// Convert the UUID into a string
+	rpcstatus = UuidToString(&uuid, &uuidstr);
+	if(rpcstatus != RPC_S_OK) throw winexception(rpcstatus);
+
+	// Convert the string into a tstring and release the RPC buffer
+	tstring result(reinterpret_cast<tchar_t*>(uuidstr));
+	RpcStringFree(&uuidstr);
+
+	return result;
+}
+
+//-----------------------------------------------------------------------------
 // svctl::GetServiceProcessType
 //
 // Reads the service process type flags from the registry
@@ -124,7 +154,7 @@ void parameter_base::Unbind(void)
 const tstring resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 {
 	// LoadString() has a neat trick to return a read-only string pointer, but
-	// it won't necessary be null-terminated.  Length is returned as result
+	// it won't necessarily be null-terminated.  Length is returned via result
 	tchar_t* string = nullptr;
 	int result = LoadString(instance, id, reinterpret_cast<tchar_t*>(&string), 0);
 
@@ -364,21 +394,9 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 		SetStatus(ServiceStatus::StartPending);
 
 		// Open or create the Parameters registry key for this service and bind the parameters
-		//
-		// TODO: This doesn't work for local applications not running as administrator, deal with that
-		// perhaps by abstracting the entire method for reading parameters (command line? xml?).  Once
-		// that is fixed up, put back the exception result
-		//
-		//if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
-		//	0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
-		//IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
-
-		// for now just bind/load only if RegCreateKeyEx() is actually successful
-		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters")).c_str(), 
-			0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &keyparams, nullptr) == ERROR_SUCCESS) {
-
-			IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
-		}
+		if(RegCreateKeyEx(context.ParameterHive, context.ParameterPath.c_str(), 0, nullptr, 0, KEY_READ | KEY_WRITE, 
+			nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
+		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
 
 		// Invoke derived service class startup code
 		OnStart(argc, argv);
@@ -403,8 +421,6 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 	}
 
 	// Unbind all of the service parameters and close the parameters registry key
-	//
-	// TODO: moved these here on purpose, but should this be done before setting SERVICE_STOPPED?
 	IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
 	if(keyparams) RegCloseKey(keyparams);
 }
@@ -602,6 +618,13 @@ service_harness::service_harness()
 	// Initialize the SERVICE_STATUS to the default state
 	memset(&m_status, 0, sizeof(SERVICE_STATUS));
 	m_status.dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
+
+	// Attempt to create a temporary registry key in HKEY_CURRENT_USER to hold
+	// the service parameters for this instance of service_harness
+	m_paramspath = _T("Software\\servicelib::service_harness\\") + GenerateUuid();
+	LSTATUS result = RegCreateKeyEx(HKEY_CURRENT_USER, m_paramspath.c_str(), 0, nullptr, REG_OPTION_VOLATILE, 
+		KEY_ALL_ACCESS, nullptr, &m_paramskey, nullptr);
+	if(result != ERROR_SUCCESS) throw winexception(result);
 }
 
 //-----------------------------------------------------------------------------
@@ -616,6 +639,13 @@ service_harness::~service_harness()
 		HANDLE thread = m_mainthread.native_handle();
 		m_mainthread.detach();
 		TerminateThread(thread, static_cast<DWORD>(E_ABORT));
+	}
+
+	// Attempt to delete and close the temporary parameters registry key
+	if(m_paramskey) {
+		
+		RegDeleteTree(m_paramskey, nullptr);
+		RegCloseKey(m_paramskey);
 	}
 }
 
@@ -844,7 +874,7 @@ void service_harness::Start(std::vector<tstring>& argvector)
 		argv.push_back(nullptr);
 
 		// Create the context for the service using the lambdas defined above and invoke LocalMain()
-		service_context context = { ServiceProcessType::Unique, registerfunc, statusfunc };
+		service_context context = { HKEY_CURRENT_USER, m_paramspath, ServiceProcessType::Unique, registerfunc, statusfunc };
 		LaunchService(argv.size() - 1, argv.data(), context);
 	}));
 

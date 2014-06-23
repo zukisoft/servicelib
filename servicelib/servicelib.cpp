@@ -114,23 +114,21 @@ void parameter_base::Unbind(void)
 //-----------------------------------------------------------------------------
 // resstring::GetResourceString (private, static)
 //
-// Gets a read-only pointer to a module string resource
+// Gets a tstring from a module string resource
 //
 // Arguments:
 //
 //	id			- Resource identifier code
 //	instance	- Module instance handle to acquire the resource from
 
-const tchar_t* resstring::GetResourceString(unsigned int id, HINSTANCE instance)
+const tstring resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 {
-	static const tchar_t EMPTY[] = _T("");		// Used for missing resources
-
-	// LoadString() has a neat trick to return a read-only string pointer
+	// LoadString() has a neat trick to return a read-only string pointer, but
+	// it won't necessary be null-terminated.  Length is returned as result
 	tchar_t* string = nullptr;
 	int result = LoadString(instance, id, reinterpret_cast<tchar_t*>(&string), 0);
 
-	// Return an empty string rather than a null pointer if the resource was missing
-	return (result == 0) ? EMPTY : string;
+	return tstring(string, result);
 }
 
 //-----------------------------------------------------------------------------

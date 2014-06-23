@@ -304,7 +304,7 @@ namespace svctl {
 		// GetResourceString
 		//
 		// Gets a read-only constant string pointer for a specific resource string
-		static const tchar_t* GetResourceString(unsigned int id, HINSTANCE instance);
+		static const tstring GetResourceString(unsigned int id, HINSTANCE instance);
 	};
 
 	// svctl::signal
@@ -873,7 +873,7 @@ namespace svctl {
 		DWORD SendControl(ServiceControl control) { return SendControl(control, 0, nullptr); }
 		DWORD SendControl(ServiceControl control, DWORD eventtype, void* eventdata);
 		
-		// Start
+		// Start (string)
 		//
 		// Starts the service, optionally specifying a variadic set of command line arguments.
 		// (Arguments can be C-style strings, fundamental data types, or tstring references)
@@ -883,6 +883,19 @@ namespace svctl {
 			// Construct a vector<> for the arguments starting with the service name
 			// and recursively invoke one of the variadic overloads until done
 			std::vector<tstring> argvector { servicename };
+			Start(argvector, arguments...);
+		}
+
+		// Start (resource id)
+		//
+		// Starts the service, optionally specifying a variadic set of command line arguments.
+		// (Arguments can be C-style strings, fundamental data types, or tstring references)
+		template <typename... _arguments>
+		void Start(unsigned int servicename, const _arguments&... arguments)
+		{
+			// Construct a vector<> for the arguments starting with the service name
+			// and recursively invoke one of the variadic overloads until done
+			std::vector<tstring> argvector { resstring(servicename) };
 			Start(argvector, arguments...);
 		}
 

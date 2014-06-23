@@ -183,7 +183,9 @@ DWORD SendControl(ServiceControl control, DWORD eventtype, LPVOID eventdata)
 	- Returns a status code similar to Win32 API's ControlService() method, should not throw an exception
 
 void Start(LPCTSTR servicename, ...)
+void Start(unsigned int servicename, ...)
 	- Starts the service with the specified service name and optional command line arguments
+	- unsigned int overload accepts a resource string id for the service name
 	- If service does not reach ServiceStatus::StartPending in 30 seconds, will raise an exception
 	- Waits for the service to reach ServiceStatus::Running
 	- Throws ServiceException& on error or if service stops prematurely

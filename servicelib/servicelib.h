@@ -1015,6 +1015,22 @@ namespace svctl {
 		service_harness(const service_harness&)=delete;
 		service_harness& operator=(const service_harness&)=delete;
 
+		// parameter_compare
+		//
+		// Case-insensitive key comparison for the parameter collection
+		struct parameter_compare 
+		{ 
+			bool operator() (const tstring& lhs, const tstring& rhs) const 
+			{
+				return _tcsicmp(lhs.c_str(), rhs.c_str()) < 0;
+			}
+		};
+
+		// parameter_collection
+		//
+		// Collection used to hold instance-specific parameters
+		using parameter_collection = std::map<tstring, std::pair<ServiceParameterFormat, std::vector<uint8_t>>, parameter_compare>;
+
 		// ServiceControlAccepted (static)
 		//
 		// Checks a ServiceControl against a SERVICE_ACCEPTS_XXXX mask
@@ -1070,6 +1086,16 @@ namespace svctl {
 		//
 		// Main service thread
 		std::thread m_mainthread;
+
+		// m_parameters
+		//
+		// Service parameter storage collection
+		parameter_collection m_parameters;
+
+		// m_paramlock
+		//
+		// Parameter collection synchronization object
+		std::recursive_mutex m_paramlock;
 
 		// m_status
 		//

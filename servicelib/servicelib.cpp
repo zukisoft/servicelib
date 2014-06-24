@@ -888,26 +888,35 @@ void service_harness::Start(std::vector<tstring>& argvector)
 	// read from the registry.  I decided not to use a temporary registry key after all, which is harder but cleaner
 	// and more flexible in the end.  Harness could use a collection, a registry key, an XML file ... and so on
 	////
-	open_paramstore_func openparams = [=](const tchar_t* servicename) -> void* {
+	open_paramstore_func openparams = [=](const tchar_t*) -> void* { return reinterpret_cast<void*>(this); };
 
-		(servicename);
-		return reinterpret_cast<void*>(this);
-	};
 
-	load_parameter_func loadparam = [](void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length) -> LONG {
+	load_parameter_func loadparam = [=](void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length) -> LONG {
 
-		(handle);
-		(name);
+		_ASSERTE(handle == reinterpret_cast<void*>(this));
+		if(handle != reinterpret_cast<void*>(this)) return ERROR_INVALID_PARAMETER;
+
+		// If a non-zero length buffer has been provided, initialize it to all zeros
+		if(buffer && length && *length) memset(buffer, 0, *length);
+
+		std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
+
+		// Locate the parameter in the collection
+		auto iterator = m_parameters.find(tstring(name));
+
+		// iterator -> std::pair<ServiceParameterType, std::vector<uint8_t>>
+
+
+		if(iterator == m_parameters.end()) {
+			// not found - zero output buffer if specified, return proper result
+		}
+		
 		(format);
 
-		if(buffer && length) memset(buffer, 0, *length);
 		return ERROR_SUCCESS;
 	};
 
-	close_paramstore_func closeparams = [](void* handle) -> void {
-
-		(handle);
-	};
+	close_paramstore_func closeparams = [=](void* handle) -> void { _ASSERTE(handle == reinterpret_cast<void*>(this)); };
 	///////////
 
 	// Create the main service thread and launch it

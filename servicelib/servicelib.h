@@ -237,17 +237,17 @@ namespace svctl {
 	// svctl::register_handler_func
 	//
 	// Function used to register a service's control handler callback function
-	typedef std::function<SERVICE_STATUS_HANDLE(LPCTSTR, LPHANDLER_FUNCTION_EX, LPVOID)> register_handler_func;
+	typedef std::function<SERVICE_STATUS_HANDLE(LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context)> register_handler_func;
 
 	// svctl::report_status_func
 	//
 	// Function used to report a service status to the service control manager
-	typedef std::function<void(SERVICE_STATUS&)> report_status_func;
+	typedef std::function<void(SERVICE_STATUS& status)> report_status_func;
 
 	// svctl::set_status_func
 	//
 	// Function used to set a service status using the handle returned by the register_handler_func
-	typedef std::function<BOOL(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS)> set_status_func;
+	typedef std::function<BOOL(SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status)> set_status_func;
 
 	// svctl::signal_type
 	//

@@ -28,36 +28,6 @@
 namespace svctl {
 
 //-----------------------------------------------------------------------------
-// svctl::GenerateUuid
-//
-// Generates a UUID and converts it into a tstring
-//
-// Arguments:
-//
-//	NONE
-
-tstring GenerateUuid(void)
-{
-	UUID			uuid;				// Folder UUID 
-	rpc_tstr		uuidstr;			// Folder UUID as a string
-	RPC_STATUS		rpcstatus;			// Result from RPC function call
-
-	// Create a UUID with the RPC runtime rather than the COM runtime
-	rpcstatus = UuidCreate(&uuid);
-	if((rpcstatus != RPC_S_OK) && (rpcstatus != RPC_S_UUID_LOCAL_ONLY)) throw winexception(rpcstatus);
-
-	// Convert the UUID into a string
-	rpcstatus = UuidToString(&uuid, &uuidstr);
-	if(rpcstatus != RPC_S_OK) throw winexception(rpcstatus);
-
-	// Convert the string into a tstring and release the RPC buffer
-	tstring result(reinterpret_cast<tchar_t*>(uuidstr));
-	RpcStringFree(&uuidstr);
-
-	return result;
-}
-
-//-----------------------------------------------------------------------------
 // svctl::GetServiceProcessType
 //
 // Reads the service process type flags from the registry
@@ -90,25 +60,27 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 //-----------------------------------------------------------------------------
 // parameter_base::Bind
 //
-// Binds the parameter to the parent registry key
+// Binds the parameter to the parameter storage
 //
 // Arguments:
 //
-//	key		- Parent Parameters registry key handle
-//	name	- Registry value name to bind the parameter to
+//	handle		- Parameter storage handle
+//	name		- Parameter value name to bind the parameter to
+//	loadfunc	- Function used to load the parameter value from storage
 
-void parameter_base::Bind(HKEY key, const tchar_t* name) 
+void parameter_base::Bind(void* handle, const tchar_t* name, const load_parameter_func& loadfunc) 
 {
 	std::lock_guard<std::recursive_mutex> critsec(m_lock);
 
-	m_key = key;
+	m_handle = handle;
+	m_loadfunc = loadfunc;
 	m_name = name;
 }
 
 //-----------------------------------------------------------------------------
 // parameter_base::IsBound (protected)
 //
-// Determines if the parameter has been bound to the registry or not
+// Determines if the parameter has been bound to storage or not
 //
 // Arguments:
 //
@@ -117,13 +89,13 @@ void parameter_base::Bind(HKEY key, const tchar_t* name)
 bool parameter_base::IsBound(void)
 {
 	std::lock_guard<std::recursive_mutex> critsec(m_lock);
-	return (m_key != nullptr);
+	return ((m_handle != nullptr) && (m_loadfunc != nullptr));
 }
 
 //-----------------------------------------------------------------------------
 // parameter_base::Unbind
 //
-// Unbinds the parameter from the parent registry key
+// Unbinds the parameter from the parameter storage
 //
 // Arguments:
 //
@@ -133,7 +105,8 @@ void parameter_base::Unbind(void)
 {
 	std::lock_guard<std::recursive_mutex> critsec(m_lock);
 
-	m_key = nullptr;
+	m_handle = nullptr;
+	m_loadfunc = nullptr;
 	m_name.clear();
 }
 
@@ -154,7 +127,7 @@ void parameter_base::Unbind(void)
 const tstring resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 {
 	// LoadString() has a neat trick to return a read-only string pointer, but
-	// it won't necessarily be null-terminated.  Length is returned via result
+	// it won't necessarily be null-terminated.  Length is returned as result
 	tchar_t* string = nullptr;
 	int result = LoadString(instance, id, reinterpret_cast<tchar_t*>(&string), 0);
 
@@ -164,6 +137,21 @@ const tstring resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //-----------------------------------------------------------------------------
 // svctl::service
 //-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// service::CloseParameterStore (private, static)
+//
+// Default implementation for closing parameter storage; uses the registry
+//
+// Arguments:
+//
+//	handle		- Handle returned from OpenParameterStore
+
+void service::CloseParameterStore(void* handle)
+{
+	// Close the registry key handle
+	if(handle) RegCloseKey(reinterpret_cast<HKEY>(handle));
+}
 
 //-----------------------------------------------------------------------------
 // service::Continue
@@ -312,6 +300,46 @@ const control_handler_table& service::getHandlers(void) const
 	return nohandlers;
 }
 
+
+//-----------------------------------------------------------------------------
+// service::LoadParameter (private, static)
+//
+// Default implementation for loading a value from parameter storage
+//
+// Arguments:
+//
+//	handle		- Handle returned from OpenParameterStore
+//	name		- Parameter value name
+//	format		- Expected parameter value format
+//	buffer		- Buffer to receive the parameter value
+//	length		- Length of the buffer
+
+LONG service::LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length)
+{
+	static_assert(sizeof(size_t) == sizeof(DWORD), "service::LoadParameter -- sizeof DWORD is not sizeof size_t; fix function call");
+
+	// Pass all arguments onto RegGetValue(), no special processing is necessary
+	return RegGetValue(reinterpret_cast<HKEY>(handle), nullptr, name, static_cast<DWORD>(format), nullptr, buffer, reinterpret_cast<DWORD*>(length));
+}
+
+//-----------------------------------------------------------------------------
+// service::OpenParameterStore (private, static)
+//
+// Default implementation for opening parameter storage; uses the registry
+//
+// Arguments:
+//
+//	servicename		- Name assigned to the service instance
+
+void* service::OpenParameterStore(const tchar_t* servicename)
+{
+	HKEY hkey = nullptr;
+
+	// The default implementation for service parameters reads them from the service's Parameters key in HKLM
+	return (RegCreateKeyEx(HKEY_LOCAL_MACHINE, (tstring(_T("System\\CurrentControlSet\\Services\\")) + servicename + _T("\\Parameters")).c_str(), 
+		0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &hkey, nullptr) == ERROR_SUCCESS) ? hkey : nullptr;
+}
+
 //-----------------------------------------------------------------------------
 // service::Pause
 //
@@ -350,7 +378,7 @@ DWORD service::Pause(void)
 
 void service::ReloadParameters(void)
 {
-	// This can be done asynchronously; just iterate each parameter and reload it's value from the registry
+	// This can be done asynchronously; just iterate each parameter and reload it's value from storage
 	std::async(std::launch::async, [=]() { IterateParameters([=](const tstring&, parameter_base& param) { param.Load(); }); });
 }
 
@@ -367,10 +395,13 @@ void service::ReloadParameters(void)
 
 void service::Main(int argc, tchar_t** argv, const service_context& context)
 {
-	HKEY keyparams = nullptr;						// Service parameters registry key
+	void* paramhandle = nullptr;					// Service parameters handle
 
 	_ASSERTE(context.RegisterHandlerFunc);
 	_ASSERTE(context.SetStatusFunc);
+	_ASSERTE(context.OpenParameterStore);
+	_ASSERTE(context.LoadParameter);
+	_ASSERTE(context.CloseParameterStore);
 
 	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
@@ -393,10 +424,9 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 		// Service is starting; report SERVICE_START_PENDING
 		SetStatus(ServiceStatus::StartPending);
 
-		// Open or create the Parameters registry key for this service and bind the parameters
-		if(RegCreateKeyEx(context.ParameterHive, context.ParameterPath.c_str(), 0, nullptr, 0, KEY_READ | KEY_WRITE, 
-			nullptr, &keyparams, nullptr) != ERROR_SUCCESS) throw winexception();
-		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(keyparams, name.c_str()); param.Load(); });
+		// Open the parameter storage for this instance and bind/load all service parameters
+		paramhandle = context.OpenParameterStore(argv[0]);
+		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(paramhandle, name.c_str(), context.LoadParameter); param.Load(); });
 
 		// Invoke derived service class startup code
 		OnStart(argc, argv);
@@ -420,9 +450,9 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
 	}
 
-	// Unbind all of the service parameters and close the parameters registry key
+	// Unbind all of the service parameters and close the parameter storage
 	IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
-	if(keyparams) RegCloseKey(keyparams);
+	context.CloseParameterStore(paramhandle);
 }
 
 //-----------------------------------------------------------------------------
@@ -618,13 +648,6 @@ service_harness::service_harness()
 	// Initialize the SERVICE_STATUS to the default state
 	memset(&m_status, 0, sizeof(SERVICE_STATUS));
 	m_status.dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
-
-	// Attempt to create a temporary registry key in HKEY_CURRENT_USER to hold
-	// the service parameters for this instance of service_harness
-	m_paramspath = _T("Software\\servicelib::service_harness\\") + GenerateUuid();
-	LSTATUS result = RegCreateKeyEx(HKEY_CURRENT_USER, m_paramspath.c_str(), 0, nullptr, REG_OPTION_VOLATILE, 
-		KEY_ALL_ACCESS, nullptr, &m_paramskey, nullptr);
-	if(result != ERROR_SUCCESS) throw winexception(result);
 }
 
 //-----------------------------------------------------------------------------
@@ -639,13 +662,6 @@ service_harness::~service_harness()
 		HANDLE thread = m_mainthread.native_handle();
 		m_mainthread.detach();
 		TerminateThread(thread, static_cast<DWORD>(E_ABORT));
-	}
-
-	// Attempt to delete and close the temporary parameters registry key
-	if(m_paramskey) {
-		
-		RegDeleteTree(m_paramskey, nullptr);
-		RegCloseKey(m_paramskey);
 	}
 }
 
@@ -863,6 +879,32 @@ void service_harness::Start(std::vector<tstring>& argvector)
 		return TRUE;
 	});
 
+	////
+	/// Out of control -- turn this into a class that derives from service_context and make it
+	// a private type in ServiceHarness
+	////
+	open_paramstore_func openparams = [=](const tchar_t* servicename) -> void* {
+
+		(servicename);
+		return reinterpret_cast<void*>(this);
+	};
+
+	load_parameter_func loadparam = [](void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length) -> LONG {
+
+		(handle);
+		(name);
+		(format);
+
+		if(buffer && length) memset(buffer, 0, *length);
+		return ERROR_SUCCESS;
+	};
+
+	close_paramstore_func closeparams = [](void* handle) -> void {
+
+		(handle);
+	};
+	///////////
+
 	// Create the main service thread and launch it
 	m_mainthread = std::move(std::thread([=]() {
 
@@ -874,7 +916,7 @@ void service_harness::Start(std::vector<tstring>& argvector)
 		argv.push_back(nullptr);
 
 		// Create the context for the service using the lambdas defined above and invoke LocalMain()
-		service_context context = { HKEY_CURRENT_USER, m_paramspath, ServiceProcessType::Unique, registerfunc, statusfunc };
+		service_context context = { ServiceProcessType::Unique, registerfunc, statusfunc, openparams, loadparam, closeparams };
 		LaunchService(argv.size() - 1, argv.data(), context);
 	}));
 

@@ -44,8 +44,6 @@
 
 // Windows API
 #include <Windows.h>
-#include <rpc.h>
-#pragma comment(lib, "rpcrt4.lib")
 
 #pragma warning(push, 4)
 #pragma warning(disable:4127)			// conditional expression is constant
@@ -104,6 +102,18 @@ enum class ServiceErrorControl
 	Normal						= SERVICE_ERROR_NORMAL,
 	Severe						= SERVICE_ERROR_SEVERE,
 	Critical					= SERVICE_ERROR_CRITICAL,
+};
+
+// ::ServiceParameterFormat
+//
+// Strongly typed enumeraton of RRF_XXXXX registry value format constants
+enum class ServiceParameterFormat : uint32_t
+{
+	Binary						= RRF_RT_REG_BINARY						| RRF_ZEROONFAILURE,
+	DWord						= RRF_RT_DWORD							| RRF_ZEROONFAILURE,
+	MultiString					= RRF_RT_REG_MULTI_SZ					| RRF_ZEROONFAILURE,
+	QWord						= RRF_RT_QWORD							| RRF_ZEROONFAILURE,
+	String						= RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ	| RRF_ZEROONFAILURE,
 };
 
 // ::ServiceProcessType (Bitmask)
@@ -192,7 +202,6 @@ namespace svctl {
 #ifndef _UNICODE
 	typedef char			tchar_t;
 	typedef std::string		tstring;
-	typedef RPC_CSTR		rpc_tstr;
 
 	template <typename _type>
 	inline typename std::enable_if<std::is_fundamental<_type>::value, tstring>::type to_tstring(_type value) 
@@ -202,7 +211,6 @@ namespace svctl {
 #else
 	typedef wchar_t			tchar_t;
 	typedef std::wstring	tstring;
-	typedef RPC_WSTR		rpc_tstr;
 
 	template <typename _type>
 	inline typename std::enable_if<std::is_fundamental<_type>::value, tstring>::type to_tstring(_type value) 
@@ -210,6 +218,21 @@ namespace svctl {
 		return std::to_wstring(value);
 	}
 #endif
+
+	// svctl::close_paramstore_func
+	//
+	// Function used to close a parameter storage handle
+	typedef std::function<void(void* handle)> close_paramstore_func;
+
+	// svctl::load_parameter_func
+	//
+	// Function used to load a parameter from storage
+	typedef std::function<LONG(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length)> load_parameter_func;
+
+	// svctl::open_paramstore_func
+	//
+	// Function used to open a parameter storage handle
+	typedef std::function<void*(const tchar_t* servicename)> open_paramstore_func;
 
 	// svctl::register_handler_func
 	//
@@ -238,11 +261,6 @@ namespace svctl {
 	//
 	// Global Functions
 	//
-
-	// svctl::GenerateUuid
-	//
-	// Generates a UUID tstring
-	tstring GenerateUuid(void);
 
 	// svctl::GetServiceProcessType
 	//
@@ -465,7 +483,7 @@ namespace svctl {
 
 	// svctl::parameter_base
 	//
-	// Base class for template-specific service ss
+	// Base class for template-specific service parameters
 	class parameter_base
 	{
 	public:
@@ -475,12 +493,12 @@ namespace svctl {
 
 		// Bind
 		//
-		// Binds the parameter to the parent key and value name
-		void Bind(HKEY key, const tchar_t* name);
+		// Binds the parameter to the storage handle and value name
+		void Bind(void* handle, const tchar_t* name, const load_parameter_func& loadfunc);
 
 		// Load
 		//
-		// Loads the parameter value from the registry
+		// Loads the parameter value from storage
 		virtual void Load(void) = 0;
 
 		// Unbind
@@ -495,21 +513,21 @@ namespace svctl {
 
 		// IsBound
 		//
-		// Determines if the parameter has been bound to the registry
+		// Determines if the parameter has been bound to storage
 		bool IsBound(void);
 
 		// ReadValue<trivial>
 		//
 		// Generic version of ReadValue for trivial data types
-		template <typename _type> _type ReadValue(DWORD format)
+		template <typename _type> _type ReadValue(ServiceParameterFormat format)
 		{
 			static_assert(std::is_trivial<_type>::value, "data type is not trivial; ReadValue<> must be specialized");
 
-			_type		value;							// Value to be read from registry
-			DWORD		length = sizeof(_type);			// Length of the value buffer
+			_type		value;							// Value to be read from storage
+			size_t		length = sizeof(_type);			// Length of the value buffer
 
-			// Attempt to read the binary value from the registry, set data to zeros on failure
-			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, &value, &length);
+			// Attempt to read the binary value from the storage, set data to zeros on failure
+			LONG result = m_loadfunc(m_handle, m_name.c_str(), format, &value, &length);
 			if(result != ERROR_SUCCESS) throw winexception(result);
 
 			return value;
@@ -518,37 +536,43 @@ namespace svctl {
 		// ReadValue<tstring>
 		//
 		// Specialization of ReadValue<> for REG_SZ / REG_EXPAND_SZ
-		template <> tstring ReadValue<tstring>(DWORD format)
+		template <> tstring ReadValue<tstring>(ServiceParameterFormat format)
 		{
-			DWORD length = 0;
+			size_t length = 0;
 
 			// Get the length of the buffer required to hold the string
-			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format, nullptr, nullptr, &length);
+			LONG result = m_loadfunc(m_handle, m_name.c_str(), format, nullptr, &length);
 			if(result != ERROR_SUCCESS) throw winexception(result);
 
-			// Allocate a local std::vector<> as the backing storage and read the value from the registry
+			// Special case: if the length of the string is zero, return an empty string
+			if(length == 0) return tstring();
+
+			// Allocate a local std::vector<> as the backing storage and read the value
 			std::vector<uint8_t> buffer(length);
-			result = RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			result = m_loadfunc(m_handle, m_name.c_str(), format, buffer.data(), &length);
 			if(result != ERROR_SUCCESS) throw winexception(result);
 
-			// Convert the registry value into a tstring instance
+			// Convert the value into a tstring instance
 			return tstring(reinterpret_cast<tchar_t*>(buffer.data()));
 		}
 
 		// ReadValue<std::vector<tstring>>
 		//
 		// Specialization of ReadValue<> for REG_MULTI_SZ
-		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(DWORD format)
+		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(ServiceParameterFormat format)
 		{
-			DWORD length = 0;
+			size_t length = 0;
 
 			// Get the length of the buffer required to hold the string array
-			LONG result = RegGetValue(m_key, nullptr, m_name.c_str(), format, nullptr, nullptr, &length);
+			LONG result = m_loadfunc(m_handle, m_name.c_str(), format, nullptr, &length);
 			if(result != ERROR_SUCCESS) throw winexception(result);
+			
+			// Special case: if length is zero, return an empty string vector
+			if(length == 0) return std::vector<tstring>();
 
-			// Allocate a local std::vector<> as the backing storage and read the value from the registry
+			// Allocate a local std::vector<> as the backing storage and read the value
 			std::vector<uint8_t> buffer(length);
-			result = RegGetValue(m_key, nullptr, m_name.c_str(), format | RRF_ZEROONFAILURE, nullptr, buffer.data(), &length);
+			result = m_loadfunc(m_handle, m_name.c_str(), format, buffer.data(), &length);
 			if(result != ERROR_SUCCESS) throw winexception(result);
 
 			// Create a collection of tstring objects, one for each string in the returned array
@@ -563,10 +587,15 @@ namespace svctl {
 			return value;
 		}
 
-		// m_key
+		// m_handle
 		//
-		// Bound registry parent key handle
-		HKEY m_key = nullptr;
+		// Bound parameter storage handle
+		void* m_handle = nullptr;
+
+		// m_loadfunc
+		//
+		// Function used to load a parameter from storage
+		load_parameter_func m_loadfunc;
 
 		// m_lock
 		//
@@ -575,7 +604,7 @@ namespace svctl {
 
 		// m_name
 		//
-		// Bound registry value name
+		// Bound parameter value name
 		tstring m_name;
 
 	private:
@@ -589,11 +618,11 @@ namespace svctl {
 	// Service parameter template class
 	//
 	//	_type		- Value type
-	//	_format		- Format flags to pass into RegGetValue
+	//	_format		- Format flags to pass into load_parameter_func
 	//	_inittype	- Type used with an initializer list
 	//	_zeroinit	- Flag that the type can be zero-initialized by default
 
-	template<typename _type, DWORD _format, typename _inittype = _type, bool _zeroinit = std::is_trivial<_type>::value>
+	template<typename _type, ServiceParameterFormat _format, typename _inittype = _type, bool _zeroinit = std::is_trivial<_type>::value>
 	class parameter : public parameter_base
 	{
 	public:
@@ -623,7 +652,7 @@ namespace svctl {
 
 		// IsDefaulted
 		//
-		// Flag if the value has been defaulted or if it has been read from the registry
+		// Flag if the value has been defaulted or if it has been read from storage
 		__declspec(property(get=getIsDefaulted)) bool IsDefaulted;
 		bool getIsDefaulted(void) const { std::lock_guard<std::recursive_mutex> critsec(m_lock); return m_defaulted; }
 
@@ -642,12 +671,12 @@ namespace svctl {
 
 			try { 
 			
-				// Attempt to read the value from the registry, and if successful clear defaulted flag
+				// Attempt to read the value from storage, and if successful clear defaulted flag
 				m_value = parameter_base::ReadValue<_type>(_format);
 				m_defaulted = false;
 			}
 			
-			catch(...) { /* DO NOTHING ON REGISTRY EXCEPTION */ }
+			catch(...) { /* DO NOTHING ON STORAGE EXCEPTION */ }
 		}
 
 		// m_defaulted
@@ -667,16 +696,6 @@ namespace svctl {
 	// allow for differences in service vs. local application model
 	struct service_context
 	{
-		// ParameterHive
-		//
-		// Registry hive that hosts the registry parameters key
-		HKEY ParameterHive;
-
-		// ParameterPath
-		//
-		// Defines the path to the registry parameters key
-		tstring ParameterPath;
-
 		// ProcessType
 		//
 		// Defines the service process type (unique/shared)
@@ -691,6 +710,21 @@ namespace svctl {
 		//
 		// Function used by the service to set status
 		set_status_func SetStatusFunc;
+
+		// OpenParameterStore
+		//
+		// Defines the function used to open parameter storage
+		open_paramstore_func OpenParameterStore;
+
+		// LoadParameter
+		//
+		// Defines the function used to load a parameter from storage
+		load_parameter_func LoadParameter;
+
+		// CloseParameterStore
+		//
+		// Defines the function used to close parameter storage
+		close_paramstore_func CloseParameterStore;
 	};
 
 	// svctl::service
@@ -754,10 +788,10 @@ namespace svctl {
 		{
 			_ASSERTE(argc);					// Service name = argv[0]
 
-			// When running as a regular service, the process type is read from the registry and the
-			// standard Win32 service API functions are used for registration and status reporting
-			service_context context = { HKEY_LOCAL_MACHINE, tstring(_T("System\\CurrentControlSet\\Services\\")) + argv[0] + _T("\\Parameters"), 
-				GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus };
+			// When running as a regular service, the process type is read from the registry, the standard Win32
+			// service API functions are used for registration and status reporting, and parameters are registry-based
+			service_context context = { GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus, 
+				OpenParameterStore, LoadParameter, CloseParameterStore };
 
 			// Create an instance of the derived service class and invoke ServiceMain()
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
@@ -796,10 +830,25 @@ namespace svctl {
 		// Wait hint used during the initial service START_PENDING status
 		const uint32_t STARTUP_WAIT_HINT = 5000;
 
+		// CloseParameterStore
+		//
+		// Default implementation for closing parameter storage
+		static void CloseParameterStore(void* handle);
+
 		// ControlHandler
 		//
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
+
+		// LoadParameter
+		//
+		// Default implementation for loading a parameter from storage
+		static LONG LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length);
+
+		// OpenParameterStore
+		//
+		// Default implementation for opening parameter storage
+		static void* OpenParameterStore(const tchar_t* servicename);
 
 		// ServiceMain
 		//
@@ -1022,16 +1071,6 @@ namespace svctl {
 		// Main service thread
 		std::thread m_mainthread;
 
-		// m_paramskey
-		//
-		// Volatile registry parameters key
-		HKEY m_paramskey = nullptr;
-
-		// m_paramspath
-		//
-		// Path to the volatile registry parameters key
-		tstring m_paramspath;
-
 		// m_status
 		//
 		// Current service status
@@ -1252,27 +1291,27 @@ protected:
 	//
 	// Generic REG_BINARY parameter for any trivial data type
 	template <class _type>
-	using BinaryParameter = svctl::parameter<_type, RRF_RT_REG_BINARY>;
+	using BinaryParameter = svctl::parameter<_type, ServiceParameterFormat::Binary>;
 
 	// DWordParameter
 	//
 	// 32-bit unsigned integer parameter
-	using DWordParameter = svctl::parameter<uint32_t, RRF_RT_DWORD>;
+	using DWordParameter = svctl::parameter<uint32_t, ServiceParameterFormat::DWord>;
 
 	// MultiStringParameter
 	//
 	// Vector of std:basic_string<tchar_t> parameters
-	using MultiStringParameter = svctl::parameter<std::vector<svctl::tstring>, RRF_RT_REG_MULTI_SZ, svctl::tstring>;
+	using MultiStringParameter = svctl::parameter<std::vector<svctl::tstring>, ServiceParameterFormat::MultiString, svctl::tstring>;
 
 	// QWordParameter
 	//
 	// 64-bit unsigned integer parameter
-	using QWordParameter = svctl::parameter<uint64_t, RRF_RT_QWORD>;
+	using QWordParameter = svctl::parameter<uint64_t, ServiceParameterFormat::QWord>;
 
 	// StringParameter
 	//
 	// std::basic_string<tchar_t> parameter
-	using StringParameter = svctl::parameter<svctl::tstring, RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ>;
+	using StringParameter = svctl::parameter<svctl::tstring, ServiceParameterFormat::String>;
 	
 private:
 
@@ -1330,8 +1369,8 @@ private:
 // PARAMETER_MAP
 //
 // Used to declare the IterateParameters virtual function implementation for the service.
-// The map entry defines what the name of the parameter registry value will be and indicates
-// what svctl::parameter<> member variable is to be bound to that registry value.
+// The map entry defines what the name of the parameter storage value will be and indicates
+// what svctl::parameter<> member variable is to be bound to that storage value.
 //
 // Local module resource identifiers can also be used in lieu of hard-coding the value name
 //

@@ -314,8 +314,11 @@ const control_handler_table& service::getHandlers(void) const
 //	buffer		- Buffer to receive the parameter value
 //	length		- Length of the buffer
 
+// TODO: I don't like "LONG" as a return type
 LONG service::LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length)
 {
+	// TODO: size_t is 64-bit on 64-bit builds; use uint32_t instead of size_t for the argument or
+	// use a local DWORD and set/change it
 	static_assert(sizeof(size_t) == sizeof(DWORD), "service::LoadParameter -- sizeof DWORD is not sizeof size_t; fix function call");
 
 	// Pass all arguments onto RegGetValue(), no special processing is necessary
@@ -880,8 +883,10 @@ void service_harness::Start(std::vector<tstring>& argvector)
 	});
 
 	////
-	/// Out of control -- turn this into a class that derives from service_context and make it
-	// a private type in ServiceHarness
+	// TODO: this is out of control -- far too many lambdas in here now.  Regardless, the idea here for these
+	// parameter ones is to have a local collection of named parameters and get them as if they were being
+	// read from the registry.  I decided not to use a temporary registry key after all, which is harder but cleaner
+	// and more flexible in the end.  Harness could use a collection, a registry key, an XML file ... and so on
 	////
 	open_paramstore_func openparams = [=](const tchar_t* servicename) -> void* {
 
@@ -917,7 +922,7 @@ void service_harness::Start(std::vector<tstring>& argvector)
 
 		// Create the context for the service using the lambdas defined above and invoke LocalMain()
 		service_context context = { ServiceProcessType::Unique, registerfunc, statusfunc, openparams, loadparam, closeparams };
-		LaunchService(argv.size() - 1, argv.data(), context);
+		LaunchService(static_cast<int>(argv.size() - 1), argv.data(), context);
 	}));
 
 	// Wait up to 30 seconds for the service to set SERVICE_START_PENDING

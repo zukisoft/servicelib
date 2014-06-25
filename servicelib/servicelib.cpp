@@ -40,7 +40,7 @@ ServiceProcessType GetServiceProcessType(const tchar_t* name)
 {
 	HKEY			key;						// Service registry key
 	DWORD			value = 0;					// REG_DWORD value buffer
-	DWORD			cb = sizeof(value);			// Size of value buffer
+	DWORD			cb = sizeof(DWORD);			// Size of value buffer
 
 	// Attempt to open the services registry key with read-only access
 	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("SYSTEM\\CurrentControlSet\\Services"), 0, KEY_READ, &key) == ERROR_SUCCESS) {
@@ -659,13 +659,8 @@ service_harness::service_harness()
 service_harness::~service_harness()
 {
 	// If the main service thread is still active, it needs to be detached
-	// and terminated to avoid a runtime error when the process exits
-	if(m_mainthread.joinable()) {
-
-		HANDLE thread = m_mainthread.native_handle();
-		m_mainthread.detach();
-		TerminateThread(thread, static_cast<DWORD>(E_ABORT));
-	}
+	// (There doesn't appear to be a legitimate way to also kill it)
+	if(m_mainthread.joinable()) m_mainthread.detach();
 }
 
 //-----------------------------------------------------------------------------

@@ -227,7 +227,7 @@ namespace svctl {
 	// svctl::load_parameter_func
 	//
 	// Function used to load a parameter from storage
-	typedef std::function<LONG(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length)> load_parameter_func;
+	typedef std::function<size_t(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length)> load_parameter_func;
 
 	// svctl::open_paramstore_func
 	//
@@ -523,12 +523,10 @@ namespace svctl {
 		{
 			static_assert(std::is_trivial<_type>::value, "data type is not trivial; ReadValue<> must be specialized");
 
-			_type		value;							// Value to be read from storage
-			size_t		length = sizeof(_type);			// Length of the value buffer
+			_type		value;						// Value to be read from storage
 
 			// Attempt to read the binary value from the storage, set data to zeros on failure
-			LONG result = m_loadfunc(m_handle, m_name.c_str(), format, &value, &length);
-			if(result != ERROR_SUCCESS) throw winexception(result);
+			m_loadfunc(m_handle, m_name.c_str(), format, &value, sizeof(_type));
 
 			return value;
 		}
@@ -538,19 +536,15 @@ namespace svctl {
 		// Specialization of ReadValue<> for REG_SZ / REG_EXPAND_SZ
 		template <> tstring ReadValue<tstring>(ServiceParameterFormat format)
 		{
-			size_t length = 0;
-
 			// Get the length of the buffer required to hold the string
-			LONG result = m_loadfunc(m_handle, m_name.c_str(), format, nullptr, &length);
-			if(result != ERROR_SUCCESS) throw winexception(result);
+			size_t length = m_loadfunc(m_handle, m_name.c_str(), format, nullptr, 0);
 
 			// Special case: if the length of the string is zero, return an empty string
 			if(length == 0) return tstring();
 
 			// Allocate a local std::vector<> as the backing storage and read the value
 			std::vector<uint8_t> buffer(length);
-			result = m_loadfunc(m_handle, m_name.c_str(), format, buffer.data(), &length);
-			if(result != ERROR_SUCCESS) throw winexception(result);
+			m_loadfunc(m_handle, m_name.c_str(), format, buffer.data(), length);
 
 			// Convert the value into a tstring instance
 			return tstring(reinterpret_cast<tchar_t*>(buffer.data()));
@@ -559,21 +553,19 @@ namespace svctl {
 		// ReadValue<std::vector<tstring>>
 		//
 		// Specialization of ReadValue<> for REG_MULTI_SZ
+		//
+		// TODO: use something more generic than vector<> as the return value, like an iterator/container
 		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(ServiceParameterFormat format)
 		{
-			size_t length = 0;
-
 			// Get the length of the buffer required to hold the string array
-			LONG result = m_loadfunc(m_handle, m_name.c_str(), format, nullptr, &length);
-			if(result != ERROR_SUCCESS) throw winexception(result);
+			size_t length = m_loadfunc(m_handle, m_name.c_str(), format, nullptr, 0);
 			
 			// Special case: if length is zero, return an empty string vector
 			if(length == 0) return std::vector<tstring>();
 
 			// Allocate a local std::vector<> as the backing storage and read the value
 			std::vector<uint8_t> buffer(length);
-			result = m_loadfunc(m_handle, m_name.c_str(), format, buffer.data(), &length);
-			if(result != ERROR_SUCCESS) throw winexception(result);
+			m_loadfunc(m_handle, m_name.c_str(), format, buffer.data(), length);
 
 			// Create a collection of tstring objects, one for each string in the returned array
 			std::vector<tstring> value;
@@ -843,7 +835,7 @@ namespace svctl {
 		// LoadParameter
 		//
 		// Default implementation for loading a parameter from storage
-		static LONG LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length);
+		static size_t LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length);
 
 		// OpenParameterStore
 		//
@@ -941,7 +933,44 @@ namespace svctl {
 		// Sends a control code to the service
 		DWORD SendControl(ServiceControl control) { return SendControl(control, 0, nullptr); }
 		DWORD SendControl(ServiceControl control, DWORD eventtype, void* eventdata);
-		
+
+		// SetParameter (ServiceParameterFormat::Binary)
+		//
+		// Sets a binary parameter key/value pair
+		template <typename _type>
+		typename std::enable_if<!std::is_integral<_type>::value, void>::type
+		SetParameter(const tchar_t* name, const _type& value) { SetParameter(name, ServiceParameterFormat::Binary, &value, sizeof(_type)); }
+
+		// SetParameter (ServiceParameterFormat::DWord)
+		//
+		// Sets a 32-bit integer parameter key/value pair
+		template <typename _type>
+		typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) != sizeof(uint64_t)), void>::type
+		SetParameter(const tchar_t* name, const _type& value) { SetParameter(name, ServiceParameterFormat::DWord, &value, sizeof(_type)); }
+
+		// SetParameter (ServiceParameterFormat::MultiString)
+		//
+		// Sets a string array parameter key/value pair
+		void SetParameter(const tchar_t* name, std::initializer_list<const tchar_t*> value);
+		// TODO: can use more overloads here
+		//      const array<const tchar_t*> ??
+		//		const vector<const tchar_t*>
+		//		const array<svctl::tstring>& ??
+		//		const vector<svctl::tstring>&
+
+		// SetParameter (ServiceParameterFormat::QWord)
+		//
+		// Sets a 64-bit integer parameter key/value pair
+		template <typename _type>
+		typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) == sizeof(uint64_t)), void>::type
+		SetParameter(const tchar_t* name, const _type& value) { SetParameter(name, ServiceParameterFormat::QWord, &value, sizeof(_type)); }
+
+		// SetParameter (ServiceParameterFormat::String)
+		//
+		// Sets a string parameter key/value pair
+		void SetParameter(const tchar_t* name, const tchar_t* value);
+		// TODO: const tstring& overload?
+
 		// Start (string)
 		//
 		// Starts the service, optionally specifying a variadic set of command line arguments.
@@ -1026,15 +1055,26 @@ namespace svctl {
 			}
 		};
 
+		// parameter_value
+		//
+		// Parameter collection value type
+		using parameter_value = std::pair<ServiceParameterFormat, std::vector<uint8_t>>;
+
 		// parameter_collection
 		//
 		// Collection used to hold instance-specific parameters
-		using parameter_collection = std::map<tstring, std::pair<ServiceParameterFormat, std::vector<uint8_t>>, parameter_compare>;
+		using parameter_collection = std::map<tstring, parameter_value, parameter_compare>;
 
 		// ServiceControlAccepted (static)
 		//
 		// Checks a ServiceControl against a SERVICE_ACCEPTS_XXXX mask
 		static bool ServiceControlAccepted(ServiceControl control, DWORD mask);
+
+		// SetParameter
+		//
+		// Internal version of SetParameter, accepts the type and raw parameter data
+		void SetParameter(const tchar_t* name, ServiceParameterFormat format, const void* value, size_t length);
+		void SetParameter(const tchar_t* name, ServiceParameterFormat format, std::vector<uint8_t>&& value);
 
 		// Start (variadic)
 		//

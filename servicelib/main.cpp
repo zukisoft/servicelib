@@ -57,6 +57,9 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
+		std::vector<svctl::tstring> multisz = m_multitest;
+		// wow, that actually worked ^^^^^^^^
+
 		//throw ServiceException(5L);
 
 		//Sleep(5000);
@@ -85,6 +88,7 @@ public:
 
 	BEGIN_PARAMETER_MAP(MyService)
 		PARAMETER_ENTRY(_T("TestSz"), m_paramtestsz)
+		PARAMETER_ENTRY(_T("MyStringRegSz"), m_multitest);
 	END_PARAMETER_MAP()
 
 private:
@@ -93,6 +97,7 @@ private:
 	MyService& operator=(const MyService&)=delete;
 
 	StringParameter m_paramtestsz { _T("defaultparam") };
+	MultiStringParameter m_multitest;
 };
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
@@ -107,11 +112,16 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 #endif	// _DEBUG
 
 	ServiceHarness<MyService> runner;
+	runner.SetParameter(L"parameter1", 0x123456);
+	runner.SetParameter(L"parameter2", 0x1);
+	runner.SetParameter(L"parameter3", 0x123456789);
+	runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
+
 	runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
 	if(runner.CanStop) runner.Stop();
 
-	runner.Start(IDS_MYSERVICE);
-	runner.Stop();
+	//runner.Start(IDS_MYSERVICE);
+	//runner.Stop();
 
 	return 0;
 

@@ -314,15 +314,15 @@ const control_handler_table& service::getHandlers(void) const
 //	buffer		- Buffer to receive the parameter value
 //	length		- Length of the buffer
 
-// TODO: I don't like "LONG" as a return type
-LONG service::LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length)
+size_t service::LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length)
 {
-	// TODO: size_t is 64-bit on 64-bit builds; use uint32_t instead of size_t for the argument or
-	// use a local DWORD and set/change it
-	static_assert(sizeof(size_t) == sizeof(DWORD), "service::LoadParameter -- sizeof DWORD is not sizeof size_t; fix function call");
+	DWORD cb = static_cast<DWORD>(length);
 
 	// Pass all arguments onto RegGetValue(), no special processing is necessary
-	return RegGetValue(reinterpret_cast<HKEY>(handle), nullptr, name, static_cast<DWORD>(format), nullptr, buffer, reinterpret_cast<DWORD*>(length));
+	LSTATUS result = RegGetValue(reinterpret_cast<HKEY>(handle), nullptr, name, static_cast<DWORD>(format), nullptr, buffer, &cb);
+	if(result != ERROR_SUCCESS) throw winexception(result);
+
+	return static_cast<size_t>(cb);			// Return required/used buffer size
 }
 
 //-----------------------------------------------------------------------------
@@ -833,6 +833,106 @@ bool service_harness::ServiceControlAccepted(ServiceControl control, DWORD mask)
 }
 
 //-----------------------------------------------------------------------------
+// service_harness::SetParameter
+//
+// Sets a string array parameter key/value pair
+//
+// Arguments:
+//
+//	name		- Name of the parameter to set
+//	value		- Value to assign to the parameter
+
+void service_harness::SetParameter(const tchar_t* name, std::initializer_list<const tchar_t*> value)
+{
+	// The MULTI_SZ format is basically a bunch of null-terminated strings jammed together
+	// followed by another trailing null character -- [String1\0String2\0String3\0\0]
+	size_t length = 0;
+	for(auto it : value) { if(it) length += ((_tcslen(it) + 1) * sizeof(tchar_t)); }
+	length += sizeof(tchar_t);
+
+	// Use a local vector<> to hold the constructed MULTI_SZ data, will be moved into collection
+	std::vector<uint8_t> buffer(length);
+	size_t pos = 0;
+
+	// Iterate over the collection of string pointers and copy them into the vector<>
+	for(auto it : value) {
+
+		if(it == nullptr) continue;
+		size_t stringlen = ((_tcslen(it) + 1) * sizeof(tchar_t));
+		memcpy_s(buffer.data() + pos, buffer.size() - pos, it, stringlen);
+		pos += stringlen;
+	}
+
+	// Ensure the array has the required trailing null character and set the parameter
+	buffer[pos] = 0;
+	SetParameter(name, ServiceParameterFormat::MultiString, std::move(buffer));
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::SetParameter
+//
+// Sets a string-based parameter key/value pair
+//
+// Arguments:
+//
+//	name		- Name of the parameter to set
+//	value		- Value to assign to the parameter
+
+void service_harness::SetParameter(const tchar_t* name, const tchar_t* value)
+{
+	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
+
+	// If a non-null string pointer was provided, set it, otherwise set a blank string instead
+	if(value) SetParameter(name, ServiceParameterFormat::String, value, (_tcslen(value) + 1) * sizeof(tchar_t));
+	else SetParameter(name, ServiceParameterFormat::String, _T("\0"), 1 * sizeof(tchar_t));
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::SetParameter (private)
+//
+// Internal implementation of SetParameter, accepts the type and raw data
+//
+// Arguments:
+//
+//	name		- Parameter name
+//	format		- Parameter format
+//	value		- Pointer to the parameter data
+//	length		- Length, in bytes, of the parameter data
+
+void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat format, const void* value, size_t length)
+{
+	_ASSERTE(value);
+	_ASSERTE(length > 0);
+
+	// Use pointers to the data as the iterators for constructing the vector<>
+	const uint8_t* begin = reinterpret_cast<const uint8_t*>(value);
+	const uint8_t* end = begin + length;
+
+	// Insert or replace the parameter value in the collection
+	//m_parameters[name] = parameter_value(format, std::vector<uint8_t>(begin, end));
+	SetParameter(name, format, std::vector<uint8_t>(begin, end));
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::SetParameter (private)
+//
+// Internal implementation of SetParameter, accepts the type and raw data
+//
+// Arguments:
+//
+//	name		- Parameter name
+//	format		- Parameter format
+//	value		- Parameter data as a vector<> rvalue reference
+
+void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat format, std::vector<uint8_t>&& value)
+{
+	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
+
+	std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
+	m_parameters[name] = parameter_value(format, std::move(value));
+}
+
+//-----------------------------------------------------------------------------
 // service_harness::Start (private)
 //
 // Starts the service
@@ -888,32 +988,35 @@ void service_harness::Start(std::vector<tstring>& argvector)
 	// read from the registry.  I decided not to use a temporary registry key after all, which is harder but cleaner
 	// and more flexible in the end.  Harness could use a collection, a registry key, an XML file ... and so on
 	////
-	open_paramstore_func openparams = [=](const tchar_t*) -> void* { return reinterpret_cast<void*>(this); };
+	open_paramstore_func openparams = [=](const tchar_t*) -> void* { 
+		return reinterpret_cast<void*>(this); 
+	};
 
-
-	load_parameter_func loadparam = [=](void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t* length) -> LONG {
+	load_parameter_func loadparam = [=](void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length) -> size_t {
 
 		_ASSERTE(handle == reinterpret_cast<void*>(this));
 		if(handle != reinterpret_cast<void*>(this)) return ERROR_INVALID_PARAMETER;
 
-		// If a non-zero length buffer has been provided, initialize it to all zeros
-		if(buffer && length && *length) memset(buffer, 0, *length);
-
 		std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
 
-		// Locate the parameter in the collection
+		// If a buffer has been provided, initialize it to all zeros
+		if(buffer) memset(buffer, 0, length);
+
+		// Locate the parameter in the collection --> ERROR_FILE_NOT_FOUND if it doesn't exist
 		auto iterator = m_parameters.find(tstring(name));
+		if(iterator == m_parameters.end()) throw winexception(ERROR_FILE_NOT_FOUND);
 
-		// iterator -> std::pair<ServiceParameterType, std::vector<uint8_t>>
+		// Check the data type against the stored value --> ERROR_UNSUPPORTED_TYPE if doesn't match
+		if(iterator->second.first != format) throw winexception(ERROR_UNSUPPORTED_TYPE);
 
-
-		if(iterator == m_parameters.end()) {
-			// not found - zero output buffer if specified, return proper result
+		if(buffer) {
+			
+			// check the buffer length and copy the data --> ERROR_MORE_DATA if insufficient
+			if(length < iterator->second.second.size()) throw winexception(ERROR_MORE_DATA);
+			else memcpy_s(buffer, length, iterator->second.second.data(), iterator->second.second.size());
 		}
-		
-		(format);
 
-		return ERROR_SUCCESS;
+		return iterator->second.second.size();			// Return the size of the parameter value in bytes
 	};
 
 	close_paramstore_func closeparams = [=](void* handle) -> void { _ASSERTE(handle == reinterpret_cast<void*>(this)); };

@@ -649,8 +649,7 @@ DWORD service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
 service_harness::service_harness()
 {
 	// Initialize the SERVICE_STATUS to the default state
-	memset(&m_status, 0, sizeof(SERVICE_STATUS));
-	m_status.dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
+	zero_init(m_status).dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
 }
 
 //-----------------------------------------------------------------------------
@@ -942,8 +941,7 @@ void service_harness::Start(std::vector<tstring>& argvector)
 	if(m_mainthread.joinable()) throw winexception(ERROR_SERVICE_ALREADY_RUNNING);
 
 	// Always reset the SERVICE_STATUS back to defaults before starting the service
-	memset(&m_status, 0, sizeof(SERVICE_STATUS));
-	m_status.dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
+	zero_init(m_status).dwCurrentState = static_cast<DWORD>(ServiceStatus::Stopped);
 
 	// There is an expectation that argv[0] is set to the service name
 	if((argvector.size() == 0) || (argvector[0].length() == 0)) throw winexception(E_INVALIDARG);

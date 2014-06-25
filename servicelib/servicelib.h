@@ -385,6 +385,12 @@ namespace svctl {
 		HANDLE m_handle;
 	};
 
+	// svctl::zero_init
+	//
+	// Handy little wrapper around memset to zero-initialize a structure
+	template <typename _type>
+	_type& zero_init(_type& value) { memset(&value, 0, sizeof(_type)); return value; }
+
 	//
 	// Service Classes
 	//
@@ -624,7 +630,7 @@ namespace svctl {
 		static_assert(!std::is_reference<_type>::value, "Service parameters cannot be reference types");
 
 		// Constructors
-		parameter() { if(_zeroinit) memset(&m_value, 0, sizeof(_type)); }
+		parameter() { if(_zeroinit) zero_init(m_value); }
 		explicit parameter(_inittype defvalue) : m_value({defvalue}) {}
 		
 		// TODO: This does not work in Visual C++ 2013, appears to be a bug in the compiler that 

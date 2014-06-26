@@ -398,13 +398,15 @@ void service::ReloadParameters(void)
 
 void service::Main(int argc, tchar_t** argv, const service_context& context)
 {
+	using namespace std::placeholders;
+
 	void* paramhandle = nullptr;					// Service parameters handle
 
 	_ASSERTE(context.RegisterHandlerFunc);
+	if(!context.RegisterHandlerFunc) throw winexception(ERROR_INVALID_PARAMETER);
+
 	_ASSERTE(context.SetStatusFunc);
-	_ASSERTE(context.OpenParameterStore);
-	_ASSERTE(context.LoadParameter);
-	_ASSERTE(context.CloseParameterStore);
+	if(!context.SetStatusFunc) throw winexception(ERROR_INVALID_PARAMETER);
 
 	// Define a static HandlerEx callback that calls back into this service instance
 	LPHANDLER_FUNCTION_EX handler = [](DWORD control, DWORD eventtype, void* eventdata, void* context) -> DWORD { 
@@ -428,8 +430,9 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 		SetStatus(ServiceStatus::StartPending);
 
 		// Open the parameter storage for this instance and bind/load all service parameters
-		paramhandle = context.OpenParameterStore(argv[0]);
-		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(paramhandle, name.c_str(), context.LoadParameter); param.Load(); });
+		paramhandle = (context.OpenParameterStore) ? context.OpenParameterStore(argv[0]) : OpenParameterStore(argv[0]);
+		load_parameter_func paramloader = (context.LoadParameter) ? context.LoadParameter : std::bind(&service::LoadParameter, this, _1, _2, _3, _4, _5);
+		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(paramhandle, name.c_str(), paramloader); param.Load(); });
 
 		// Invoke derived service class startup code
 		OnStart(argc, argv);
@@ -455,7 +458,8 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 
 	// Unbind all of the service parameters and close the parameter storage
 	IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
-	context.CloseParameterStore(paramhandle);
+	if(context.CloseParameterStore) context.CloseParameterStore(paramhandle);
+	else CloseParameterStore(paramhandle);
 }
 
 //-----------------------------------------------------------------------------

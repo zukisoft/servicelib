@@ -741,6 +741,11 @@ namespace svctl {
 		// Instance Constructor
 		service()=default;
 
+		// CloseParameterStore
+		//
+		// Closes the parameter store; uses registry if not overriden in derived class
+		virtual void CloseParameterStore(void* handle);
+
 		// Continue
 		//
 		// Continues the service from a paused state
@@ -750,6 +755,11 @@ namespace svctl {
 		//
 		// Iterates over the collection of parameters and executes a function against each
 		virtual void IterateParameters(std::function<void(const tstring& name, parameter_base& param)> func);
+
+		// LoadParameter
+		//
+		// Loads a named value from the parameter store; uses registry if not overriden in derived class
+		virtual size_t LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length);
 
 		// LocalMain
 		//
@@ -768,6 +778,11 @@ namespace svctl {
 		//
 		// Invoked when the service is started; must be implemented in the service
 		virtual void OnStart(int argc, LPTSTR* argv) = 0;
+
+		// OpenParameterStore
+		//
+		// Opens the parameter store; uses registry if not overriden in derived class
+		virtual void* OpenParameterStore(const tchar_t* servicename);
 
 		// Pause
 		//
@@ -788,9 +803,8 @@ namespace svctl {
 			_ASSERTE(argc);					// Service name = argv[0]
 
 			// When running as a regular service, the process type is read from the registry, the standard Win32
-			// service API functions are used for registration and status reporting, and parameters are registry-based
-			service_context context = { GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus, 
-				OpenParameterStore, LoadParameter, CloseParameterStore };
+			// service API functions are used for registration and status reporting, and parameters are dynamic
+			service_context context = { GetServiceProcessType(argv[0]), ::RegisterServiceCtrlHandlerEx, ::SetServiceStatus, nullptr, nullptr, nullptr };
 
 			// Create an instance of the derived service class and invoke ServiceMain()
 			std::unique_ptr<service> instance = std::make_unique<_derived>();
@@ -829,25 +843,10 @@ namespace svctl {
 		// Wait hint used during the initial service START_PENDING status
 		const uint32_t STARTUP_WAIT_HINT = 5000;
 
-		// CloseParameterStore
-		//
-		// Default implementation for closing parameter storage
-		static void CloseParameterStore(void* handle);
-
 		// ControlHandler
 		//
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
-
-		// LoadParameter
-		//
-		// Default implementation for loading a parameter from storage
-		static size_t LoadParameter(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length);
-
-		// OpenParameterStore
-		//
-		// Default implementation for opening parameter storage
-		static void* OpenParameterStore(const tchar_t* servicename);
 
 		// ServiceMain
 		//

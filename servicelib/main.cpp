@@ -77,6 +77,30 @@ public:
 
 	}
 
+	void* OpenParameterStore(LPCTSTR servicename)
+	{
+		OutputDebugString(L"MyService::OpenParameterStore\r\n");
+		return reinterpret_cast<void*>(this);
+	}
+
+	size_t LoadParameter(void* handle, LPCTSTR name, ServiceParameterFormat format, void* buffer, size_t length)
+	{
+		(handle);
+		(name);
+		(format);
+		(buffer);
+		(length);
+
+		OutputDebugString(L"MyService::LoadParameter\r\n");
+		throw ServiceException(E_NOTIMPL);
+	}
+
+	void CloseParameterStore(void* handle)
+	{
+		if(handle == reinterpret_cast<void*>(this))
+			OutputDebugString(L"MyService::CloseParameterStore -- correct handle\r\n");
+	}
+
 	void OnStop(void)
 	{
 		//Sleep(5000);
@@ -113,29 +137,29 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	struct test { 
+	//struct test { 
 
-		int me1;
-		int me2;
-	};
+	//	int me1;
+	//	int me2;
+	//};
 
-	test mytest;
+	//test mytest;
 
-	ServiceHarness<MyService> runner;
+	//ServiceHarness<MyService> runner;
 
-	runner.SetParameter(L"parameter0", mytest);
-	runner.SetParameter(L"parameter1", 0x123456);
-	runner.SetParameter(L"parameter2", 0x1);
-	runner.SetParameter(L"parameter3", 0x123456789);
-	runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
+	//runner.SetParameter(L"parameter0", mytest);
+	//runner.SetParameter(L"parameter1", 0x123456);
+	//runner.SetParameter(L"parameter2", 0x1);
+	//runner.SetParameter(L"parameter3", 0x123456789);
+	//runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
 
-	runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
-	if(runner.CanStop) runner.Stop();
+	//runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
+	//if(runner.CanStop) runner.Stop();
 
-	//runner.Start(IDS_MYSERVICE);
-	//runner.Stop();
+	////runner.Start(IDS_MYSERVICE);
+	////runner.Stop();
 
-	return 0;
+	//return 0;
 
 	// Manual dispatching with dynamic names
 	ServiceTable services = { ServiceTableEntry<MyService>(_T("MyService")), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };

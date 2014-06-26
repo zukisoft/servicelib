@@ -132,6 +132,8 @@ method will do nothing.  Detection of a successful load from the registry can be
 by checking the IsDefaulted property of the parameter variable.  This will be set to false once
 the value has been loaded from the registry at least once
 
+// todo: can now be overriden in derived service to not use the registry
+
 -------------------------------
 SERVICE TEST HARNESS (EXTERNAL)
 -------------------------------

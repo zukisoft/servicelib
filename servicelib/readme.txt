@@ -199,7 +199,9 @@ DWORD SendControl(ServiceControl control, DWORD eventtype, LPVOID eventdata)
 	- Returns a status code similar to Win32 API's ControlService() method, should not throw an exception
 
 void SetParameter(LPCTSTR name, <type>& value)
+void SetParameter(unsigned int name, <type>& value)
 	- Sets a local service parameter key/value pair with a format derived from <type>
+	- unsigned int overload accepts a resource string id for the parameter name
 	- Throws ServiceException& on error
 
 		<type>                               Implied format                       Service<> declaration

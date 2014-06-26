@@ -323,7 +323,7 @@ bool service_harness::ServiceControlAccepted(ServiceControl control, DWORD mask)
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(const tchar_t* name, std::initializer_list<const tchar_t*> value)
+void service_harness::SetParameter(const tchar_t* name, const std::initializer_list<const tchar_t*>& value)
 {
 	// The MULTI_SZ format is basically a bunch of null-terminated strings jammed together
 	// followed by another trailing null character -- [String1\0String2\0String3\0\0]

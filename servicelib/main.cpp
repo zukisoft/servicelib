@@ -2,8 +2,9 @@
 //
 
 #include "stdafx.h"
-#include "servicelib.h"
+#include "Service.h"
 #include "resource.h"
+#include "ServiceHarness.h"
 
 
 // MinimalService Sample
@@ -111,7 +112,16 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
+	struct test { 
+
+		int me1;
+		int me2;
+	};
+
+	test mytest;
+
 	ServiceHarness<MyService> runner;
+	runner.SetParameter(L"parameter0", mytest);
 	runner.SetParameter(L"parameter1", 0x123456);
 	runner.SetParameter(L"parameter2", 0x1);
 	runner.SetParameter(L"parameter3", 0x123456789);

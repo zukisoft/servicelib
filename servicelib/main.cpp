@@ -118,7 +118,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
 
 	runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
-	//if(runner.CanStop) runner.Stop();
+	if(runner.CanStop) runner.Stop();
 
 	//runner.Start(IDS_MYSERVICE);
 	//runner.Stop();

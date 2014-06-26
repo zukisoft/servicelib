@@ -1071,6 +1071,26 @@ namespace svctl {
 		// Collection used to hold instance-specific parameters
 		using parameter_collection = std::map<tstring, parameter_value, parameter_compare>;
 
+		// CloseParameterStoreFunc
+		//
+		// Function invoked by the service to close parameter storage
+		void CloseParameterStoreFunc(void* handle);
+
+		// LoadParameterFunc
+		//
+		// Function invoked by the service to load a parameter value
+		size_t LoadParameterFunc(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length);
+
+		// OpenParameterStoreFunc
+		//
+		// Function invoked by the service to open parameter storage
+		void* OpenParameterStoreFunc(const tchar_t* servicename);
+
+		// RegisterHandlerFunc
+		//
+		// Function invoked by the service to register it's control handler
+		SERVICE_STATUS_HANDLE RegisterHandlerFunc(LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context);
+
 		// ServiceControlAccepted (static)
 		//
 		// Checks a ServiceControl against a SERVICE_ACCEPTS_XXXX mask
@@ -1081,6 +1101,11 @@ namespace svctl {
 		// Internal version of SetParameter, accepts the type and raw parameter data
 		void SetParameter(const tchar_t* name, ServiceParameterFormat format, const void* value, size_t length);
 		void SetParameter(const tchar_t* name, ServiceParameterFormat format, std::vector<uint8_t>&& value);
+
+		// SetStatusFunc
+		//
+		// Function invoked by the service to report a status change
+		BOOL SetStatusFunc(SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status);
 
 		// Start (variadic)
 		//

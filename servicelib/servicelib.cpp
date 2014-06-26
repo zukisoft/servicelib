@@ -663,6 +663,20 @@ service_harness::~service_harness()
 }
 
 //-----------------------------------------------------------------------------
+// service_harness::CloseParameterStoreFunc (private)
+//
+// Function invoked by the service to close parameter storage
+//
+// Arguments:
+//
+//	handle		- Handle provided by OpenParameterStore
+
+void service_harness::CloseParameterStoreFunc(void* handle)
+{
+	_ASSERTE(handle == reinterpret_cast<void*>(this));
+}
+
+//-----------------------------------------------------------------------------
 // service_harness::Continue
 //
 // Sends SERVICE_CONTROL_CONTINUE to the service, throws an exception if the
@@ -733,6 +747,64 @@ bool service_harness::getCanStop(void)
 }
 
 //-----------------------------------------------------------------------------
+// service_harness::LoadParameterFunc (private)
+//
+// Function invoked by the service to load a parameter value
+//
+// Arguments:
+//
+//	handle		- Handle provided by OpenParameterStore
+//	name		- Name of the parameter to load
+//	format		- Expected parameter data format
+//	buffer		- Destination buffer for the parameter data
+//	length		- Length of the parameter destination buffer
+
+size_t service_harness::LoadParameterFunc(void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length)
+{
+	// The handle provided by OpenParameterStore is fake; it's just the (this) pointer
+	_ASSERTE(handle == reinterpret_cast<void*>(this));
+	if(handle != reinterpret_cast<void*>(this)) return ERROR_INVALID_PARAMETER;
+
+	std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
+
+	// If a buffer has been provided, initialize it to all zeros
+	if(buffer) memset(buffer, 0, length);
+
+	// Locate the parameter in the collection --> ERROR_FILE_NOT_FOUND if it doesn't exist
+	auto iterator = m_parameters.find(tstring(name));
+	if(iterator == m_parameters.end()) throw winexception(ERROR_FILE_NOT_FOUND);
+
+	// Check the data type against the stored value --> ERROR_UNSUPPORTED_TYPE if doesn't match
+	if(iterator->second.first != format) throw winexception(ERROR_UNSUPPORTED_TYPE);
+
+	if(buffer) {
+			
+		// check the buffer length and copy the data --> ERROR_MORE_DATA if insufficient
+		if(length < iterator->second.second.size()) throw winexception(ERROR_MORE_DATA);
+		else memcpy_s(buffer, length, iterator->second.second.data(), iterator->second.second.size());
+	}
+
+	return iterator->second.second.size();			// Return the size of the parameter value in bytes
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::OpenParameterStoreFunc (private)
+//
+// Function invoked by the contained service to open parameter storage (no-op)
+//
+// Arguments:
+//
+//	servicename		- Name of the service instance
+
+void* service_harness::OpenParameterStoreFunc(const tchar_t* servicename)
+{
+	UNREFERENCED_PARAMETER(servicename);
+
+	// A handle isn't necessary for the local parameter store, use (this)
+	return reinterpret_cast<void*>(this); 
+}
+
+//-----------------------------------------------------------------------------
 // service_harness::Pause
 //
 // Sends SERVICE_CONTROL_PAUSE to the service, throws an exception if the
@@ -748,6 +820,29 @@ void service_harness::Pause(void)
 	if(result != ERROR_SUCCESS) throw winexception(result);
 
 	WaitForStatus(ServiceStatus::Paused);
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::RegisterHandlerFunc (private)
+//
+// Function invoked by the service to register it's control handler
+//
+// Arguments:
+//
+//	servicename		- Name assigned to the service instance
+//	handler			- Pointer to the service's HandlerEx() callback
+//	context			- HandlerEx() callback context pointer
+
+SERVICE_STATUS_HANDLE service_harness::RegisterHandlerFunc(LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context)
+{
+	_ASSERTE(handler != nullptr);
+	UNREFERENCED_PARAMETER(servicename);
+
+	m_handler = handler;					// Store the handler function pointer
+	m_context = context;					// Store the handler context pointer
+
+	// Return the address of this harness instance as a pseudo SERVICE_STATUS_HANDLE for the service
+	return reinterpret_cast<SERVICE_STATUS_HANDLE>(this);
 }
 
 //-----------------------------------------------------------------------------
@@ -927,6 +1022,31 @@ void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat f
 }
 
 //-----------------------------------------------------------------------------
+// service_harness::SetStatusFunc (private)
+//
+// Function invoked by the service to report a change in status
+//
+// Arguments:
+//
+//	handle		- Handle returned by RegisterHandlerFunc
+//	status		- New status being reported by the service
+
+BOOL service_harness::SetStatusFunc(SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status)
+{
+	std::unique_lock<std::mutex> critsec(m_statuslock);
+
+	// Ensure that the handle provided is actually the address of this harness instance
+	_ASSERTE(reinterpret_cast<service_harness*>(handle) == this);
+	if(reinterpret_cast<service_harness*>(handle) != this) { SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
+
+	m_status = *status;						// Copy the new SERVICE_STATUS
+	critsec.unlock();						// Release the critical section
+	m_statuschanged.notify_all();			// Notify the status has been changed
+
+	return TRUE;
+};
+
+//-----------------------------------------------------------------------------
 // service_harness::Start (private)
 //
 // Starts the service
@@ -937,6 +1057,8 @@ void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat f
 
 void service_harness::Start(std::vector<tstring>& argvector)
 {
+	using namespace std::placeholders;
+
 	// If the main thread has already been created, the service has already been started
 	if(m_mainthread.joinable()) throw winexception(ERROR_SERVICE_ALREADY_RUNNING);
 
@@ -945,75 +1067,6 @@ void service_harness::Start(std::vector<tstring>& argvector)
 
 	// There is an expectation that argv[0] is set to the service name
 	if((argvector.size() == 0) || (argvector[0].length() == 0)) throw winexception(E_INVALIDARG);
-
-	// Define the control handler registration callback for this harness instance
-	register_handler_func registerfunc = ([=](LPCTSTR servicename, LPHANDLER_FUNCTION_EX handler, LPVOID context) -> SERVICE_STATUS_HANDLE 
-	{
-		_ASSERTE(handler != nullptr);
-		UNREFERENCED_PARAMETER(servicename);
-
-		m_handler = handler;					// Store the handler function pointer
-		m_context = context;					// Store the handler context pointer
-
-		// Return the address of this harness instance as a pseudo SERVICE_STATUS_HANDLE for the service
-		return reinterpret_cast<SERVICE_STATUS_HANDLE>(this);
-	});
-
-	// Define the status change callback for this harness instance
-	set_status_func statusfunc = ([=](SERVICE_STATUS_HANDLE handle, LPSERVICE_STATUS status) -> BOOL { 
-
-		std::unique_lock<std::mutex> critsec(m_statuslock);
-
-		// Ensure that the handle provided is actually the address of this harness instance
-		_ASSERTE(reinterpret_cast<service_harness*>(handle) == this);
-		if(reinterpret_cast<service_harness*>(handle) != this) { SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
-
-		m_status = *status;						// Copy the new SERVICE_STATUS
-		critsec.unlock();						// Release the critical section
-		m_statuschanged.notify_all();			// Notify the status has been changed
-
-		return TRUE;
-	});
-
-	////
-	// TODO: this is out of control -- far too many lambdas in here now.  Regardless, the idea here for these
-	// parameter ones is to have a local collection of named parameters and get them as if they were being
-	// read from the registry.  I decided not to use a temporary registry key after all, which is harder but cleaner
-	// and more flexible in the end.  Harness could use a collection, a registry key, an XML file ... and so on
-	////
-	open_paramstore_func openparams = [=](const tchar_t*) -> void* { 
-		return reinterpret_cast<void*>(this); 
-	};
-
-	load_parameter_func loadparam = [=](void* handle, const tchar_t* name, ServiceParameterFormat format, void* buffer, size_t length) -> size_t {
-
-		_ASSERTE(handle == reinterpret_cast<void*>(this));
-		if(handle != reinterpret_cast<void*>(this)) return ERROR_INVALID_PARAMETER;
-
-		std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
-
-		// If a buffer has been provided, initialize it to all zeros
-		if(buffer) memset(buffer, 0, length);
-
-		// Locate the parameter in the collection --> ERROR_FILE_NOT_FOUND if it doesn't exist
-		auto iterator = m_parameters.find(tstring(name));
-		if(iterator == m_parameters.end()) throw winexception(ERROR_FILE_NOT_FOUND);
-
-		// Check the data type against the stored value --> ERROR_UNSUPPORTED_TYPE if doesn't match
-		if(iterator->second.first != format) throw winexception(ERROR_UNSUPPORTED_TYPE);
-
-		if(buffer) {
-			
-			// check the buffer length and copy the data --> ERROR_MORE_DATA if insufficient
-			if(length < iterator->second.second.size()) throw winexception(ERROR_MORE_DATA);
-			else memcpy_s(buffer, length, iterator->second.second.data(), iterator->second.second.size());
-		}
-
-		return iterator->second.second.size();			// Return the size of the parameter value in bytes
-	};
-
-	close_paramstore_func closeparams = [=](void* handle) -> void { _ASSERTE(handle == reinterpret_cast<void*>(this)); };
-	///////////
 
 	// Create the main service thread and launch it
 	m_mainthread = std::move(std::thread([=]() {
@@ -1025,8 +1078,16 @@ void service_harness::Start(std::vector<tstring>& argvector)
 		for(const auto& arg: arguments) argv.push_back(const_cast<tchar_t*>(arg.c_str()));
 		argv.push_back(nullptr);
 
-		// Create the context for the service using the lambdas defined above and invoke LocalMain()
-		service_context context = { ServiceProcessType::Unique, registerfunc, statusfunc, openparams, loadparam, closeparams };
+		// Create the context for the service by binding this instance's member functions
+		service_context context = { ServiceProcessType::Unique,
+			std::bind(&service_harness::RegisterHandlerFunc, this, _1, _2, _3),
+			std::bind(&service_harness::SetStatusFunc, this, _1, _2),
+			std::bind(&service_harness::OpenParameterStoreFunc, this, _1),
+			std::bind(&service_harness::LoadParameterFunc, this, _1, _2, _3, _4, _5),
+			std::bind(&service_harness::CloseParameterStoreFunc, this, _1) 
+		};
+
+		// Launch the service with the specified command line arguments and instance context
 		LaunchService(static_cast<int>(argv.size() - 1), argv.data(), context);
 	}));
 

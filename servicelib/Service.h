@@ -560,7 +560,8 @@ namespace svctl {
 		//
 		// Specialization of ReadValue<> for REG_MULTI_SZ
 		//
-		// TODO: use something more generic than vector<> as the return value, like an iterator/container
+		// TODO: use something more generic than vector<> as the return value, like a custom
+		// iterator-based class containing tstrings
 		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(ServiceParameterFormat format)
 		{
 			// Get the length of the buffer required to hold the string array

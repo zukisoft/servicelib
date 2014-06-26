@@ -365,7 +365,25 @@ void service_harness::SetParameter(const tchar_t* name, const tchar_t* value)
 
 	// If a non-null string pointer was provided, set it, otherwise set a blank string instead
 	if(value) SetParameter(name, ServiceParameterFormat::String, value, (_tcslen(value) + 1) * sizeof(tchar_t));
-	else SetParameter(name, ServiceParameterFormat::String, _T("\0"), 1 * sizeof(tchar_t));
+	else SetParameter(name, ServiceParameterFormat::String, _T("\0"), sizeof(tchar_t));
+}
+
+//-----------------------------------------------------------------------------
+// service_harness::SetParameter
+//
+// Sets a string-based parameter key/value pair
+//
+// Arguments:
+//
+//	name		- Name of the parameter to set
+//	value		- Value to assign to the parameter
+
+void service_harness::SetParameter(const tchar_t* name, const tstring& value)
+{
+	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
+
+	// Set the parameter using the const tchar_t pointer for the string, include the null terminator
+	SetParameter(name, ServiceParameterFormat::String, value.c_str(), (value.length() + 1) * sizeof(tchar_t));
 }
 
 //-----------------------------------------------------------------------------

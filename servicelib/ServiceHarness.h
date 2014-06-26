@@ -81,11 +81,7 @@ namespace svctl {
 		//
 		// Sets a string array parameter key/value pair
 		void SetParameter(const tchar_t* name, std::initializer_list<const tchar_t*> value);
-		// TODO: can use more overloads here
-		//      const array<const tchar_t*> ??
-		//		const vector<const tchar_t*>
-		//		const array<svctl::tstring>& ??
-		//		const vector<svctl::tstring>&
+		// TODO: forward iterator overload
 
 		// SetParameter (ServiceParameterFormat::QWord)
 		//
@@ -98,7 +94,7 @@ namespace svctl {
 		//
 		// Sets a string parameter key/value pair
 		void SetParameter(const tchar_t* name, const tchar_t* value);
-		// TODO: const tstring& overload?
+		void SetParameter(const tchar_t* name, const tstring& value);
 
 		// Start (string)
 		//

@@ -58,7 +58,7 @@ public:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
-		std::vector<svctl::tstring> multisz = m_multitest;
+		std::vector<std::wstring> multisz = m_multitest;
 		// wow, that actually worked ^^^^^^^^
 
 		//throw ServiceException(5L);
@@ -99,6 +99,7 @@ private:
 
 	StringParameter m_paramtestsz { _T("defaultparam") };
 	MultiStringParameter m_multitest;
+	DWordParameter m_dwtest { 456 };
 };
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPTSTR lpCmdLine, _In_ int nCmdShow)
@@ -121,6 +122,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 	test mytest;
 
 	ServiceHarness<MyService> runner;
+
 	runner.SetParameter(L"parameter0", mytest);
 	runner.SetParameter(L"parameter1", 0x123456);
 	runner.SetParameter(L"parameter2", 0x1);

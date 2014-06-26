@@ -44,12 +44,13 @@ SOFTWARE.
 
 >> HOW TO DEBUG SERVICES
 
----------------------------
-SERVICE REGISTRY PARAMETERS
----------------------------
+------------------
+SERVICE PARAMETERS
+------------------
 
-Support for basic read-only registry-based service parameters is provided by the following
-data types that can be declared for service-local member variables:
+Support for read-only service parameters is provided by the following data types
+that can be declared as derived service class member variables.
+// todo: can be overridden, default is registry key
 
 DWordParameter (uint32_t)
 - Registry type: REG_BINARY or REG_DWORD
@@ -87,6 +88,7 @@ provided that the string table is part of the local executable's resources:
 		PARAMETER_ENTRY(_T("MyDWORDParameter"), m_mydword)
 	END_PARAMETER_MAP()
 
+// todo: now can be overridden
 At service startup, the PARAMETER_MAP is iterated and each parameter is bound to the 
 HLKM\System\CurrentControlSet\Services\{service name}\Parameters registry key.  If this
 parent key does not exist, it will be created automatically.  Each parameter will then
@@ -165,8 +167,7 @@ for some trigger to occur that will terminate the harness application, and then 
 
 
 >> PARAMETERS DOCUMENTATION GOES HERE
-
-	need note about EXPAND_SZ, will not automatically expand variables like registry
+	need note about EXPAND_SZ, will not automatically expand variables like with registry
 	
 	...
 	ServiceHarness<MyService> harness;
@@ -201,12 +202,17 @@ void SetParameter(LPCTSTR name, <type>& value)
 	- Sets a local service parameter key/value pair with a format derived from <type>
 	- Throws ServiceException& on error
 
-	ServiceParameterFormat::Binary --> BinaryParameter
-	ServiceParameterFormat::DWord --> DWordParameter
-	ServiceParameterFormat::MultiString --> MultiStringParameter
-	ServiceParameterFormat::QWord --> QWordParameter
-	ServiceParameterFormat::String --> StringParameter
-	// todo: document
+		<type>                               Implied format                       Service<> declaration
+		------                               --------------                       ---------------------
+		8-bit integer                        ServiceParameterFormat::DWord        DWordParameter
+		16-bit integer                       ServiceParameterFormat::DWord        DWordParameter
+		32-bit integer                       ServiceParameterFormat::DWord        DWordParameter
+		64-bit integer                       ServiceParameterFormat::QWord        QWordParameter
+		const TCHAR*                         ServiceParameterFormat::String       StringParameter
+		const std::[w]string&                ServiceParameterFormat::String       StringParameter
+		std::initializer_list<const TCHAR*>  ServiceParameterFormat::MultiString  MultiStringParameter
+		// more MultiString overloads will come here
+		[any other trivial data type]        ServiceParameterFormat::Binary       BinaryParameter
 
 void Start(LPCTSTR servicename, ...)
 void Start(unsigned int servicename, ...)

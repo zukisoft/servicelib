@@ -323,7 +323,7 @@ bool service_harness::ServiceControlAccepted(ServiceControl control, DWORD mask)
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(const tchar_t* name, const std::initializer_list<const tchar_t*>& value)
+void service_harness::SetParameter(LPCTSTR name, const std::initializer_list<const tchar_t*>& value)
 {
 	// The MULTI_SZ format is basically a bunch of null-terminated strings jammed together
 	// followed by another trailing null character -- [String1\0String2\0String3\0\0]
@@ -359,7 +359,7 @@ void service_harness::SetParameter(const tchar_t* name, const std::initializer_l
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(const tchar_t* name, const tchar_t* value)
+void service_harness::SetParameter(LPCTSTR name, const tchar_t* value)
 {
 	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
 
@@ -378,7 +378,7 @@ void service_harness::SetParameter(const tchar_t* name, const tchar_t* value)
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(const tchar_t* name, const tstring& value)
+void service_harness::SetParameter(LPCTSTR name, const tstring& value)
 {
 	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
 

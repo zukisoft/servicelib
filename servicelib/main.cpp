@@ -147,11 +147,10 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 	ServiceHarness<MyService> runner;
 
-	//runner.SetParameter(L"parameter0", mytest);
-	//runner.SetParameter(L"parameter1", 0x123456);
-	//runner.SetParameter(L"parameter2", 0x1);
-	//runner.SetParameter(L"parameter3", 0x123456789);
-	//runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
+	runner.SetParameter(L"parameter1", 0x123456);
+	runner.SetParameter(L"parameter2", 0x1);
+	runner.SetParameter(L"parameter3", 0x123456789);
+	runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
 
 	//runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
 	//if(runner.CanStop) runner.Stop();

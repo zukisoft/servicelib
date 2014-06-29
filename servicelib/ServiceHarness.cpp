@@ -323,7 +323,7 @@ bool service_harness::ServiceControlAccepted(ServiceControl control, DWORD mask)
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(LPCTSTR name, std::initializer_list<const tchar_t*> value)
+void service_harness::SetParameter(const resstring& name, std::initializer_list<const tchar_t*> value)
 {
 	// The MULTI_SZ format is basically a bunch of null-terminated strings jammed together
 	// followed by another trailing null character -- [String1\0String2\0String3\0\0]
@@ -359,10 +359,8 @@ void service_harness::SetParameter(LPCTSTR name, std::initializer_list<const tch
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(LPCTSTR name, const tchar_t* value)
+void service_harness::SetParameter(const resstring& name, const tchar_t* value)
 {
-	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
-
 	// If a non-null string pointer was provided, set it, otherwise set a blank string instead
 	if(value) SetParameter(name, ServiceParameterFormat::String, value, (_tcslen(value) + 1) * sizeof(tchar_t));
 	else SetParameter(name, ServiceParameterFormat::String, _T("\0"), sizeof(tchar_t));
@@ -378,10 +376,8 @@ void service_harness::SetParameter(LPCTSTR name, const tchar_t* value)
 //	name		- Name of the parameter to set
 //	value		- Value to assign to the parameter
 
-void service_harness::SetParameter(LPCTSTR name, const tstring& value)
+void service_harness::SetParameter(const resstring& name, const tstring& value)
 {
-	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
-
 	// Set the parameter using the const tchar_t pointer for the string, include the null terminator
 	SetParameter(name, ServiceParameterFormat::String, value.c_str(), (value.length() + 1) * sizeof(tchar_t));
 }
@@ -398,7 +394,7 @@ void service_harness::SetParameter(LPCTSTR name, const tstring& value)
 //	value		- Pointer to the parameter data
 //	length		- Length, in bytes, of the parameter data
 
-void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat format, const void* value, size_t length)
+void service_harness::SetParameter(const tstring& name, ServiceParameterFormat format, const void* value, size_t length)
 {
 	_ASSERTE(value);
 	_ASSERTE(length > 0);
@@ -408,7 +404,6 @@ void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat f
 	const uint8_t* end = begin + length;
 
 	// Insert or replace the parameter value in the collection
-	//m_parameters[name] = parameter_value(format, std::vector<uint8_t>(begin, end));
 	SetParameter(name, format, std::vector<uint8_t>(begin, end));
 }
 
@@ -423,9 +418,9 @@ void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat f
 //	format		- Parameter format
 //	value		- Parameter data as a vector<> rvalue reference
 
-void service_harness::SetParameter(const tchar_t* name, ServiceParameterFormat format, std::vector<uint8_t>&& value)
+void service_harness::SetParameter(const tstring& name, ServiceParameterFormat format, std::vector<uint8_t>&& value)
 {
-	if(name == nullptr) throw winexception(ERROR_INVALID_PARAMETER);
+	if(name.length() == 0) throw winexception(ERROR_INVALID_PARAMETER);
 
 	std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
 	m_parameters[name] = parameter_value(format, std::move(value));

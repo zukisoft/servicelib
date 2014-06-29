@@ -67,44 +67,31 @@ namespace svctl {
 		//
 		// Sets a binary parameter key/value pair
 		template <typename _type> typename std::enable_if<!std::is_integral<_type>::value && std::is_trivial<_type>::value, void>::type
-		SetParameter(LPCTSTR name, const _type& value) { SetParameter(name, ServiceParameterFormat::Binary, &value, sizeof(_type)); }
-
-		template <typename _type> typename std::enable_if<!std::is_integral<_type>::value && std::is_trivial<_type>::value, void>::type
-		SetParameter(unsigned int name, const _type& value) { SetParameter(resstring(name).c_str(), ServiceParameterFormat::Binary, &value, sizeof(_type)); }
+		SetParameter(const resstring& name, const _type& value) { SetParameter(name, ServiceParameterFormat::Binary, &value, sizeof(_type)); }
 
 		// SetParameter (ServiceParameterFormat::DWord)
 		//
 		// Sets a 32-bit integer parameter key/value pair
 		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) < sizeof(uint64_t)), void>::type
-		SetParameter(LPCTSTR name, const _type& value) { SetParameter(name, ServiceParameterFormat::DWord, &value, sizeof(_type)); }
-
-		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) < sizeof(uint64_t)), void>::type
-		SetParameter(unsigned int name, const _type& value) { SetParameter(resstring(name).c_str(), ServiceParameterFormat::DWord, &value, sizeof(_type)); }
+		SetParameter(const resstring& name, const _type& value) { SetParameter(name, ServiceParameterFormat::DWord, &value, sizeof(_type)); }
 
 		// SetParameter (ServiceParameterFormat::MultiString)
 		//
 		// Sets a string array parameter key/value pair
-		void SetParameter(LPCTSTR name, std::initializer_list<const tchar_t*> value);
-		void SetParameter(unsigned int name, std::initializer_list<const tchar_t*> value) { SetParameter(resstring(name).c_str(), value); }
+		void SetParameter(const resstring& name, std::initializer_list<const tchar_t*> value);
 		// TODO: forward iterator overload
 
 		// SetParameter (ServiceParameterFormat::QWord)
 		//
 		// Sets a 64-bit integer parameter key/value pair
 		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) == sizeof(uint64_t)), void>::type
-		SetParameter(LPCTSTR name, const _type& value) { SetParameter(name, ServiceParameterFormat::QWord, &value, sizeof(_type)); }
-
-		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) == sizeof(uint64_t)), void>::type
-		SetParameter(unsigned int name, const _type& value) { SetParameter(resstring(name).c_str(), ServiceParameterFormat::QWord, &value, sizeof(_type)); }
+		SetParameter(const resstring& name, const _type& value) { SetParameter(name, ServiceParameterFormat::QWord, &value, sizeof(_type)); }
 
 		// SetParameter (ServiceParameterFormat::String)
 		//
 		// Sets a string parameter key/value pair
-		void SetParameter(LPCTSTR name, const tchar_t* value);
-		void SetParameter(unsigned int name, const tchar_t* value) { SetParameter(resstring(name).c_str(), value); }
-
-		void SetParameter(LPCTSTR name, const tstring& value);
-		void SetParameter(unsigned int name, const tstring& value) { SetParameter(resstring(name).c_str(), value); }
+		void SetParameter(const resstring& name, const tchar_t* value);
+		void SetParameter(const resstring& name, const tstring& value);
 
 		// Start
 		//
@@ -215,8 +202,8 @@ namespace svctl {
 		// SetParameter
 		//
 		// Internal version of SetParameter, accepts the type and raw parameter data
-		void SetParameter(const tchar_t* name, ServiceParameterFormat format, const void* value, size_t length);
-		void SetParameter(const tchar_t* name, ServiceParameterFormat format, std::vector<uint8_t>&& value);
+		void SetParameter(const tstring& name, ServiceParameterFormat format, const void* value, size_t length);
+		void SetParameter(const tstring& name, ServiceParameterFormat format, std::vector<uint8_t>&& value);
 
 		// SetStatusFunc
 		//

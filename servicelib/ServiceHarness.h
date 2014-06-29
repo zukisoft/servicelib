@@ -106,29 +106,16 @@ namespace svctl {
 		void SetParameter(LPCTSTR name, const tstring& value);
 		void SetParameter(unsigned int name, const tstring& value) { SetParameter(resstring(name).c_str(), value); }
 
-		// Start (string)
+		// Start
 		//
 		// Starts the service, optionally specifying a variadic set of command line arguments.
 		// (Arguments can be C-style strings, fundamental data types, or tstring references)
 		template <typename... _arguments>
-		void Start(LPCTSTR servicename, const _arguments&... arguments)
+		void Start(const resstring& servicename, const _arguments&... arguments)
 		{
 			// Construct a vector<> for the arguments starting with the service name
 			// and recursively invoke one of the variadic overloads until done
 			std::vector<tstring> argvector { servicename };
-			Start(argvector, arguments...);
-		}
-
-		// Start (resource id)
-		//
-		// Starts the service, optionally specifying a variadic set of command line arguments.
-		// (Arguments can be C-style strings, fundamental data types, or tstring references)
-		template <typename... _arguments>
-		void Start(unsigned int servicename, const _arguments&... arguments)
-		{
-			// Construct a vector<> for the arguments starting with the service name
-			// and recursively invoke one of the variadic overloads until done
-			std::vector<tstring> argvector { resstring(servicename) };
 			Start(argvector, arguments...);
 		}
 

@@ -222,36 +222,31 @@ namespace svctl {
 	// svctl::is_iterator
 	//
 	// Trait to determine if a type is potentially a valid iterator type
-	template <typename _iterator>
-	struct is_iterator : 
+	template <typename _iterator> struct is_iterator : 
 		public std::integral_constant<bool, !std::is_integral<_iterator>::value> {};
 
 	// svctl::is_tchar_pointer
 	//
 	// Trait to determine if a type is a tchar_t pointer or const tchar_t pointer
-	template <typename value_type>
-	struct is_tchar_pointer : 
+	template <typename value_type> struct is_tchar_pointer : 
 		public std::integral_constant<bool, std::is_pointer<value_type>::value && (std::is_same<value_type, tchar_t*>::value || std::is_same<value_type, const tchar_t*>::value)> {};
 
 	// svctl::is_tchar_iterator
 	//
 	// Trait to determine if a type is a tchar_t iterator
-	template <typename _iterator>
-	struct is_tchar_iterator : 
+	template <typename _iterator> struct is_tchar_iterator : 
 		public std::integral_constant<bool, is_iterator<_iterator>::value && is_tchar_pointer<typename std::iterator_traits<_iterator>::value_type>::value> {};
 
 	// svctl::is_tstring
 	//
 	// Trait to determine if a type is a tstring
-	template <typename value_type>
-	struct is_tstring : 
+	template <typename value_type> struct is_tstring : 
 		public std::integral_constant<bool, std::is_same<value_type, tstring>::value> {};
 
 	// svctl::is_tstring_iterator
 	//
 	// Trait to determine if a type is a tstring iterator
-	template <typename _iterator>
-	struct is_tstring_iterator : 
+	template <typename _iterator> struct is_tstring_iterator : 
 		public std::integral_constant<bool, is_iterator<_iterator>::value && is_tstring<typename std::iterator_traits<_iterator>::value_type>::value> {};
 
 	// svctl::close_paramstore_func
@@ -356,9 +351,10 @@ namespace svctl {
 	public:
 
 		// Instance Constructors
-		explicit resstring(const tchar_t* str) : tstring(str) {}
-		explicit resstring(const tstring& str) : tstring(str) {}
-		explicit resstring(unsigned int id) : resstring(id, GetModuleHandle(nullptr)) {}
+		resstring(const tchar_t* str) : tstring(str) {}
+		resstring(const tstring& str) : tstring(str) {}
+		resstring(unsigned int id) : resstring(id, GetModuleHandle(nullptr)) {}
+		resstring(int id) : resstring(static_cast<unsigned int>(id), GetModuleHandle(nullptr)) {}
 		resstring(unsigned int id, HINSTANCE instance) : tstring(GetResourceString(id, instance)) {}
 
 	private:
@@ -504,8 +500,6 @@ namespace svctl {
 	protected:
 
 		// Instance constructors
-		service_table_entry(const tchar_t* name, const LPSERVICE_MAIN_FUNCTION servicemain) : 
-			m_name(name), m_servicemain(servicemain) {}
 		service_table_entry(tstring name, const LPSERVICE_MAIN_FUNCTION servicemain) : 
 			m_name(name), m_servicemain(servicemain) {}
 
@@ -1066,12 +1060,8 @@ template <class _derived>
 struct ServiceTableEntry : public svctl::service_table_entry
 {
 	// Instance constructors
-	explicit ServiceTableEntry(LPCTSTR name) : 
+	ServiceTableEntry(const svctl::resstring& name) : 
 		service_table_entry(name, &svctl::service::ServiceMain<_derived>) {}
-	explicit ServiceTableEntry(unsigned int nameres) : 
-		service_table_entry(svctl::resstring(nameres), &svctl::service::ServiceMain<_derived>) {}
-	explicit ServiceTableEntry(unsigned int nameres, HINSTANCE instance) : 
-		service_table_entry(svctl::resstring(nameres, instance), &svctl::service::ServiceMain<_derived>) {}
 };
 
 //-----------------------------------------------------------------------------

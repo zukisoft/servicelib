@@ -55,6 +55,34 @@ service_harness::~service_harness()
 }
 
 //-----------------------------------------------------------------------------
+// service_harness::AppendToMultiStringBuffer (private)
+//
+// Appends a single string to an existing REG_MULTI_SZ buffer or terminates the
+// buffer by appending a final NULL if nullptr has been specified for string
+//
+// Arguments:
+//
+//	buffer		- Parameter byte data buffer
+//	string		- String to append to the buffer, or nullptr to terminate
+
+std::vector<uint8_t>& service_harness::AppendToMultiStringBuffer(std::vector<uint8_t>& buffer, const tchar_t* string)
+{
+	// Calculate the length of the data to be appended to the buffer and get current position
+	size_t length = (string) ? ((_tcslen(string) + 1) * sizeof(tchar_t)) : sizeof(tchar_t);
+	size_t pos = buffer.size();
+
+	// Allocate sufficient space in the buffer to hold the new data
+	buffer.resize(buffer.size() + length);
+
+	// If a string was provided, copy that and the NUL terminator into the buffer.  Otherwise,
+	// append a single NULL by zeroing out the additional space reserved above
+	if(string) memcpy_s(buffer.data() + pos, buffer.size() - pos, string, length);
+	else memset(buffer.data() + pos, 0, length);
+
+	return buffer;
+}
+
+//-----------------------------------------------------------------------------
 // service_harness::CloseParameterStoreFunc (private)
 //
 // Function invoked by the service to close parameter storage
@@ -311,42 +339,6 @@ bool service_harness::ServiceControlAccepted(ServiceControl control, DWORD mask)
 
 		default: return false;
 	}
-}
-
-//-----------------------------------------------------------------------------
-// service_harness::SetParameter
-//
-// Sets a string array parameter key/value pair
-//
-// Arguments:
-//
-//	name		- Name of the parameter to set
-//	value		- Value to assign to the parameter
-
-void service_harness::SetParameter(const resstring& name, std::initializer_list<const tchar_t*> value)
-{
-	// The MULTI_SZ format is basically a bunch of null-terminated strings jammed together
-	// followed by another trailing null character -- [String1\0String2\0String3\0\0]
-	size_t length = 0;
-	for(auto it : value) { if(it) length += ((_tcslen(it) + 1) * sizeof(tchar_t)); }
-	length += sizeof(tchar_t);
-
-	// Use a local vector<> to hold the constructed MULTI_SZ data, will be moved into collection
-	std::vector<uint8_t> buffer(length);
-	size_t pos = 0;
-
-	// Iterate over the collection of string pointers and copy them into the vector<>
-	for(auto it : value) {
-
-		if(it == nullptr) continue;
-		size_t stringlen = ((_tcslen(it) + 1) * sizeof(tchar_t));
-		memcpy_s(buffer.data() + pos, buffer.size() - pos, it, stringlen);
-		pos += stringlen;
-	}
-
-	// Ensure the array has the required trailing null character and set the parameter
-	buffer[pos] = 0;
-	SetParameter(name, ServiceParameterFormat::MultiString, std::move(buffer));
 }
 
 //-----------------------------------------------------------------------------

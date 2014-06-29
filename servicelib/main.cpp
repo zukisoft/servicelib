@@ -137,23 +137,24 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	//struct test { 
+	struct test { 
 
-	//	int me1;
-	//	int me2;
-	//};
+		int me1;
+		int me2;
+	};
 
-	//test mytest;
+	test mytest;
 
 	ServiceHarness<MyService> runner;
 
+	runner.SetParameter(L"binarytest", mytest);
 	runner.SetParameter(L"parameter1", 0x123456);
 	runner.SetParameter(L"parameter2", 0x1);
 	runner.SetParameter(L"parameter3", 0x123456789);
 	runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
 
-	//runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
-	//if(runner.CanStop) runner.Stop();
+	runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
+	if(runner.CanStop) runner.Stop();
 
 	runner.Start(IDS_MYSERVICE);
 	runner.Stop();

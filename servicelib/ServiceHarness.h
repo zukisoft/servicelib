@@ -77,9 +77,33 @@ namespace svctl {
 
 		// SetParameter (ServiceParameterFormat::MultiString)
 		//
-		// Sets a string array parameter key/value pair
-		void SetParameter(const resstring& name, std::initializer_list<const tchar_t*> value);
-		// TODO: forward iterator overload
+		// Sets a string array parameter key/value pair.  Accepts arrays of tchar_t*, arrays of tstring, initializer_list<tchar_t*>, 
+		// initializer_list<tstring>, tchar_t* iterator pairs and tstring iterator pairs
+		template <typename _type, size_t _size> typename std::enable_if<is_tchar_pointer<_type>::value || is_tstring<_type>::value, void>::type
+		SetParameter(const resstring& name, _type (&_array)[_size]) { SetParameter(name, std::begin(_array), std::end(_array)); }
+
+		template <typename _type> typename std::enable_if<is_tchar_pointer<_type>::value || is_tstring<_type>::value, void>::type
+		SetParameter(const resstring& name, std::initializer_list<_type> value) { SetParameter(name, value.begin(), value.end()); }
+		
+		template <typename _iterator> typename std::enable_if<is_tchar_iterator<_iterator>::value, void>::type
+		SetParameter(const resstring& name, _iterator first, _iterator last)
+		{
+			std::vector<uint8_t> buffer;						// Raw value data buffer container
+
+			// Iterate over the specifed container and append each string to the multi-string value buffer
+			for(auto it = first; it != last; it++) AppendToMultiStringBuffer(buffer, *it);
+			SetParameter(name, ServiceParameterFormat::MultiString, std::move(AppendToMultiStringBuffer(buffer, nullptr)));
+		}
+
+		template <typename _iterator> typename std::enable_if<is_tstring_iterator<_iterator>::value, void>::type
+		SetParameter(const resstring& name, _iterator first, _iterator last)
+		{
+			std::vector<uint8_t> buffer;						// Raw value data buffer container
+
+			// Iterate over the specifed container and append each string to the multi-string value buffer
+			for(auto it = first; it != last; it++) AppendToMultiStringBuffer(buffer, it->c_str());
+			SetParameter(name, ServiceParameterFormat::MultiString, std::move(AppendToMultiStringBuffer(buffer, nullptr)));
+		}
 
 		// SetParameter (ServiceParameterFormat::QWord)
 		//
@@ -173,6 +197,11 @@ namespace svctl {
 		//
 		// Collection used to hold instance-specific parameters
 		using parameter_collection = std::map<tstring, parameter_value, parameter_compare>;
+
+		// AppendToMultiStringBuffer
+		//
+		// Helper used when generating a REG_MULTI_SZ parmeter buffer
+		std::vector<uint8_t>& AppendToMultiStringBuffer(std::vector<uint8_t>& buffer, const tchar_t* string);
 
 		// CloseParameterStoreFunc
 		//

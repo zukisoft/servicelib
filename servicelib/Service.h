@@ -219,6 +219,41 @@ namespace svctl {
 	}
 #endif
 
+	// svctl::is_iterator
+	//
+	// Trait to determine if a type is potentially a valid iterator type
+	template <typename _iterator>
+	struct is_iterator : 
+		public std::integral_constant<bool, !std::is_integral<_iterator>::value> {};
+
+	// svctl::is_tchar_pointer
+	//
+	// Trait to determine if a type is a tchar_t pointer or const tchar_t pointer
+	template <typename value_type>
+	struct is_tchar_pointer : 
+		public std::integral_constant<bool, std::is_pointer<value_type>::value && (std::is_same<value_type, tchar_t*>::value || std::is_same<value_type, const tchar_t*>::value)> {};
+
+	// svctl::is_tchar_iterator
+	//
+	// Trait to determine if a type is a tchar_t iterator
+	template <typename _iterator>
+	struct is_tchar_iterator : 
+		public std::integral_constant<bool, is_iterator<_iterator>::value && is_tchar_pointer<typename std::iterator_traits<_iterator>::value_type>::value> {};
+
+	// svctl::is_tstring
+	//
+	// Trait to determine if a type is a tstring
+	template <typename value_type>
+	struct is_tstring : 
+		public std::integral_constant<bool, std::is_same<value_type, tstring>::value> {};
+
+	// svctl::is_tstring_iterator
+	//
+	// Trait to determine if a type is a tstring iterator
+	template <typename _iterator>
+	struct is_tstring_iterator : 
+		public std::integral_constant<bool, is_iterator<_iterator>::value && is_tstring<typename std::iterator_traits<_iterator>::value_type>::value> {};
+
 	// svctl::close_paramstore_func
 	//
 	// Function used to close a parameter storage handle

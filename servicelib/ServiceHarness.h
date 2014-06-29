@@ -66,26 +66,26 @@ namespace svctl {
 		// SetParameter (ServiceParameterFormat::Binary)
 		//
 		// Sets a binary parameter key/value pair
-		template <typename _type> typename std::enable_if<!std::is_integral<_type>::value, void>::type
+		template <typename _type> typename std::enable_if<!std::is_integral<_type>::value && std::is_trivial<_type>::value, void>::type
 		SetParameter(LPCTSTR name, const _type& value) { SetParameter(name, ServiceParameterFormat::Binary, &value, sizeof(_type)); }
 
-		template <typename _type> typename std::enable_if<!std::is_integral<_type>::value, void>::type
+		template <typename _type> typename std::enable_if<!std::is_integral<_type>::value && std::is_trivial<_type>::value, void>::type
 		SetParameter(unsigned int name, const _type& value) { SetParameter(resstring(name).c_str(), ServiceParameterFormat::Binary, &value, sizeof(_type)); }
 
 		// SetParameter (ServiceParameterFormat::DWord)
 		//
 		// Sets a 32-bit integer parameter key/value pair
-		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) != sizeof(uint64_t)), void>::type
+		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) < sizeof(uint64_t)), void>::type
 		SetParameter(LPCTSTR name, const _type& value) { SetParameter(name, ServiceParameterFormat::DWord, &value, sizeof(_type)); }
 
-		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) != sizeof(uint64_t)), void>::type
+		template <typename _type> typename std::enable_if<std::is_integral<_type>::value && (sizeof(_type) < sizeof(uint64_t)), void>::type
 		SetParameter(unsigned int name, const _type& value) { SetParameter(resstring(name).c_str(), ServiceParameterFormat::DWord, &value, sizeof(_type)); }
 
 		// SetParameter (ServiceParameterFormat::MultiString)
 		//
 		// Sets a string array parameter key/value pair
-		void SetParameter(LPCTSTR name, const std::initializer_list<const tchar_t*>& value);
-		void SetParameter(unsigned int name, const std::initializer_list<const tchar_t*>& value) { SetParameter(resstring(name).c_str(), value); }
+		void SetParameter(LPCTSTR name, std::initializer_list<const tchar_t*> value);
+		void SetParameter(unsigned int name, std::initializer_list<const tchar_t*> value) { SetParameter(resstring(name).c_str(), value); }
 		// TODO: forward iterator overload
 
 		// SetParameter (ServiceParameterFormat::QWord)

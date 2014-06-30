@@ -169,9 +169,6 @@ three protected methods (all three should be overridden):
 SERVICE TEST HARNESS (EXTERNAL)
 -------------------------------
 
-Header File: ServiceHarness.h
-Implementation File: ServiceHarness.cpp
-
 Services generated with the service template library can also be run under the context of a provided
 test harness class, ServiceHarness<>.  This class provides the ability to start, stop and send control
 codes to the service class.  Mimicking control codes that require event data is supported, but it's

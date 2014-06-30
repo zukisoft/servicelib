@@ -2,10 +2,8 @@
 //
 
 #include "stdafx.h"
-#include "Service.h"
+#include "servicelib.h"
 #include "resource.h"
-#include "ServiceHarness.h"
-
 
 // MinimalService Sample
 //

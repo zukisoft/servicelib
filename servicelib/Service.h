@@ -588,9 +588,6 @@ namespace svctl {
 		// ReadValue<std::vector<tstring>>
 		//
 		// Specialization of ReadValue<> for REG_MULTI_SZ
-		//
-		// TODO: use something more generic than vector<> as the return value, like a custom
-		// iterator-based class containing tstrings
 		template <> std::vector<tstring> ReadValue<std::vector<tstring>>(ServiceParameterFormat format)
 		{
 			// Get the length of the buffer required to hold the string array
@@ -683,6 +680,12 @@ namespace svctl {
 		// Flag if the value has been defaulted or if it has been read from storage
 		__declspec(property(get=getIsDefaulted)) bool IsDefaulted;
 		bool getIsDefaulted(void) const { std::lock_guard<std::recursive_mutex> critsec(m_lock); return m_defaulted; }
+
+		// Value
+		//
+		// Retrieves the value of the parameter; can be used with auto keyword instead of operator()
+		__declspec(property(get=getValue)) _type Value;
+		_type getValue(void) { std::lock_guard<std::recursive_mutex> critsec(m_lock); return m_value; }
 
 	private:
 

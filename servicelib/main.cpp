@@ -59,10 +59,6 @@ public:
 		UNREFERENCED_PARAMETER(argv);
 
 		std::vector<std::wstring> multisz = m_multitest;
-		auto multisz_auto = m_multitest.Value;
-
-		auto dword_auto = m_dwtest.Value;
-
 		// wow, that actually worked ^^^^^^^^
 
 		//throw ServiceException(5L);
@@ -81,29 +77,29 @@ public:
 
 	}
 
-	//void* OpenParameterStore(LPCTSTR servicename)
-	//{
-	//	OutputDebugString(L"MyService::OpenParameterStore\r\n");
-	//	return reinterpret_cast<void*>(this);
-	//}
+	void* OpenParameterStore(LPCTSTR servicename)
+	{
+		OutputDebugString(L"MyService::OpenParameterStore\r\n");
+		return reinterpret_cast<void*>(this);
+	}
 
-	//size_t LoadParameter(void* handle, LPCTSTR name, ServiceParameterFormat format, void* buffer, size_t length)
-	//{
-	//	(handle);
-	//	(name);
-	//	(format);
-	//	(buffer);
-	//	(length);
+	size_t LoadParameter(void* handle, LPCTSTR name, ServiceParameterFormat format, void* buffer, size_t length)
+	{
+		(handle);
+		(name);
+		(format);
+		(buffer);
+		(length);
 
-	//	OutputDebugString(L"MyService::LoadParameter\r\n");
-	//	throw ServiceException(E_NOTIMPL);
-	//}
+		OutputDebugString(L"MyService::LoadParameter\r\n");
+		throw ServiceException(E_NOTIMPL);
+	}
 
-	//void CloseParameterStore(void* handle)
-	//{
-	//	if(handle == reinterpret_cast<void*>(this))
-	//		OutputDebugString(L"MyService::CloseParameterStore -- correct handle\r\n");
-	//}
+	void CloseParameterStore(void* handle)
+	{
+		if(handle == reinterpret_cast<void*>(this))
+			OutputDebugString(L"MyService::CloseParameterStore -- correct handle\r\n");
+	}
 
 	void OnStop(void)
 	{

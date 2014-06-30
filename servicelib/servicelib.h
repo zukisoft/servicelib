@@ -661,7 +661,8 @@ namespace svctl {
 		explicit parameter(_inittype defvalue) : m_value({defvalue}) {}
 		
 		// TODO: This does not work in Visual C++ 2013, appears to be a bug in the compiler that 
-		// prevents using an initializer_list as a non-static member variable initializer
+		// prevents using an initializer_list as a non-static member variable initializer.  This
+		// affects the ability for MultiStringParameter to accept default initialization
 		//
 		//parameter(std::initializer_list<_inittype> init) : m_value(init) {}
 

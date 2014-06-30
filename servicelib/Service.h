@@ -684,6 +684,12 @@ namespace svctl {
 		__declspec(property(get=getIsDefaulted)) bool IsDefaulted;
 		bool getIsDefaulted(void) const { std::lock_guard<std::recursive_mutex> critsec(m_lock); return m_defaulted; }
 
+		// Value
+		//
+		// Retrieves the value of the parameter; can be used with auto keyword instead of operator()
+		__declspec(property(get=getValue)) _type Value;
+		_type getValue(void) { std::lock_guard<std::recursive_mutex> critsec(m_lock); return m_value; }
+
 	private:
 
 		parameter(const parameter&)=delete;

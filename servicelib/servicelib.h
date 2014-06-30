@@ -1242,12 +1242,6 @@ namespace svctl {
 using ServiceException = svctl::winexception;
 
 //-----------------------------------------------------------------------------
-// ::ServiceHarness
-//
-// Forward declaration of external class
-template<class _service> class ServiceHarness;
-
-//-----------------------------------------------------------------------------
 // ::ServiceControlHandler<>
 //
 // Specialization of the svctl::control_handler class that allows the derived
@@ -1383,6 +1377,34 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// ::ServiceHarness<>
+//
+// Template version of svctl::service_harness
+
+template <class _service>
+class ServiceHarness : public svctl::service_harness
+{
+public:
+
+	// Constructor / Destructor
+	ServiceHarness()=default;
+	virtual ~ServiceHarness()=default;
+
+private:
+
+	ServiceHarness(const ServiceHarness&)=delete;
+	ServiceHarness& operator=(const ServiceHarness&)=delete;
+
+	// LaunchService (service_harness)
+	//
+	// Launches the derived service by invoking it's LocalMain entry point
+	virtual void LaunchService(int argc, LPTSTR* argv, const svctl::service_context& context)
+	{
+		_service::LocalMain<_service>(argc, argv, context);
+	}
+};
+
+//-----------------------------------------------------------------------------
 // ::Service<>
 //
 // Template version of svctl::service
@@ -1430,34 +1452,6 @@ private:
 
 	Service(const Service&)=delete;
 	Service& operator=(const Service&)=delete;
-};
-
-//-----------------------------------------------------------------------------
-// ::ServiceHarness<>
-//
-// Template version of svctl::service_harness
-
-template <class _service>
-class ServiceHarness : public svctl::service_harness
-{
-public:
-
-	// Constructor / Destructor
-	ServiceHarness()=default;
-	virtual ~ServiceHarness()=default;
-
-private:
-
-	ServiceHarness(const ServiceHarness&)=delete;
-	ServiceHarness& operator=(const ServiceHarness&)=delete;
-
-	// LaunchService (service_harness)
-	//
-	// Launches the derived service by invoking it's LocalMain entry point
-	virtual void LaunchService(int argc, LPTSTR* argv, const svctl::service_context& context)
-	{
-		_service::LocalMain<_service>(argc, argv, context);
-	}
 };
 
 // CONTROL_HANDLER_MAP

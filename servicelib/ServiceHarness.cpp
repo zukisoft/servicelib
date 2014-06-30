@@ -183,7 +183,7 @@ size_t service_harness::LoadParameterFunc(void* handle, const tchar_t* name, Ser
 {
 	// The handle provided by OpenParameterStore is fake; it's just the (this) pointer
 	_ASSERTE(handle == reinterpret_cast<void*>(this));
-	if(handle != reinterpret_cast<void*>(this)) return ERROR_INVALID_PARAMETER;
+	if(handle != reinterpret_cast<void*>(this)) throw winexception(ERROR_INVALID_PARAMETER);
 
 	std::lock_guard<std::recursive_mutex> critsec(m_paramlock);
 

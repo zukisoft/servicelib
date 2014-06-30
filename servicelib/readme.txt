@@ -48,9 +48,11 @@ SOFTWARE.
 SERVICE PARAMETERS
 ------------------
 
-Support for read-only service parameters is provided by the following data types
-that can be declared as derived service class member variables.
-// todo: can be overridden, default is registry key
+Support for read-only service parameters is provided by the following data types that
+can be declared as derived service class member variables.  The defualt implementation
+provided accesses the parameter data via the system registry using a "Parameters" key
+located underneath the service's entry in HKLM\System\CurrentControlSet\Services.  This
+underlying parameter storage medium can be overridden, see below for details.
 
 DWordParameter (uint32_t)
 - Registry type: REG_BINARY or REG_DWORD
@@ -61,22 +63,24 @@ MultiStringParameter (std::vector<svctl::tstring>)
 QWordParameter (uint64_t)
 - Registry type: REG_BINARY or REG_QWORD
 
-StringParameter (svctl::tstring)
+StringParameter (std::[w]string)
 - Registry type: REG_SZ or REG_EXPAND_SZ
 
 BinaryParameter<T> (T)
 - Registry type: REG_BINARY
 - T must be a trivial data type, see std::is_trivial() for a definition of what qualifies
 
-Declare the parameter(s) as member variable(s) in the service class, optionally
-specifying a default value.  If no default value is set at construction, the value
-will either be set to zero (DWordParameter, QWordParameter, BinaryParameter<T>), an
-empty string (StringParameter) or an empty vector<> (MultiStringParameter):
+Declare the parameter(s) as member variable(s) in the service class, optionally specifying
+a default value.  If no default value is set at construction, the value will either be set to 
+zero (DWordParameter, QWordParameter, BinaryParameter<T>), an empty string (StringParameter) 
+or an empty vector<[w]string> (MultiStringParameter):
 
 	private:
 		...
 		StringParameter m_mysz { _T("defaultvalue") };
 		DWordParameter m_mydword;
+		// todo: MultiStringParameter initializer is broken right now
+		// MultiStringParameter m_multisz { _T("String1"), _T("String2"), _T("String3")}
 
 In order for the service to locate and bind each parameter, they must be exposed via
 the BEGIN_PARAMETER_MAP() set of macros, similar to how control handlers are exposed.
@@ -88,7 +92,6 @@ provided that the string table is part of the local executable's resources:
 		PARAMETER_ENTRY(_T("MyDWORDParameter"), m_mydword)
 	END_PARAMETER_MAP()
 
-// todo: now can be overridden
 At service startup, the PARAMETER_MAP is iterated and each parameter is bound to the 
 HLKM\System\CurrentControlSet\Services\{service name}\Parameters registry key.  If this
 parent key does not exist, it will be created automatically.  Each parameter will then
@@ -107,6 +110,10 @@ kept in mind, especially for the MultiStringParameter and BinaryParameter<T> ver
 they potentially store a great deal of data.  This behavior is enforced to allow the parameters
 to be thread-safe with the SERVICE_CONTROL_PARAMCHANGE automatic handler.
 
+The auto keyword can be used in conjunction with the .Value property of any parameter
+object to simplify the declaration.  This is particularly useful when working with
+MultiStringParameters, as the underlying type is an std::vector<svctl::tstring> instance
+
 Correct way to declare and access parameters:
 
 	BEGIN_PARAMETER_MAP(MyService)
@@ -119,7 +126,7 @@ Correct way to declare and access parameters:
 
 	void OnStart(DWORD argc, LPTSTR* argv)
 	{
-		svctl::tstring tempdir = m_tempdir;	
+		auto tempdir = m_tempdir.Value;
 		CreateTempDirectoryToHoldInterestingStuff(tempdir);
 		...		
 		uint32_t retrycount = m_retrycount;
@@ -134,7 +141,29 @@ method will do nothing.  Detection of a successful load from the registry can be
 by checking the IsDefaulted property of the parameter variable.  This will be set to false once
 the value has been loaded from the registry at least once
 
-// todo: can now be overriden in derived service to not use the registry
+The default registry-based implementation for parameter storage can be overriden by the service
+class, perhaps to load parameters from a file or a database.  This is accomplished by overloading
+three protected methods (all three should be overridden):
+
+	void* OpenParameterStore(const TCHAR* servicename)
+		- Opens the storage medium (file, database, registry, etc) where the parameters are stored
+		- Must return a non-NULL opaque handle as a void pointer.  If NULL is returned, the parameters will not be bound/loaded
+		- This function can throw a ServiceException, but doing so will terminate the service prior to it starting
+
+	size_t LoadParameter(void* handle, const TCHAR* name, ServiceParameterFormat format, void* buffer, size_t length)
+		- Loads a parameter value from the opened parameter storage
+		- Returns the number of bytes written to the buffer, or the number of bytes required if length is insufficient
+		- name indicates the name of the parameter
+		- format is the required output format for the parameter value data; these match up with registry value data types
+		- buffer is a fixed-length buffer to receive the raw parameter value data
+		- length is the length, in bytes, of the output buffer
+		- If a nullptr is specified for buffer, the function should return the number of bytes required to hold the value
+		- If a non-nullptr is specified for buffer and length is insufficient, this function should throw a ServiceException
+
+	void CloseParameterStore(void* handle)
+		- Closes the storage medium opened by OpenParameterStore() and associated with the opaque handle
+		- This function should not throw an exception
+
 
 -------------------------------
 SERVICE TEST HARNESS (EXTERNAL)
@@ -149,36 +178,70 @@ codes to the service class.  Mimicking control codes that require event data is 
 left up to the harness application to send in something realistic.
 
 Service command line arguments can be provided when starting the service by appending them to the
-Start(servicename) method.  This method is variadic and can accept any fundamental data type supported
-by std::to_[w]string(), a constant generic text string pointer, or a reference to an std::[w]string object:
+Start(servicename) method.  A resource string id can also be used to specify the service name. This 
+method is variadic and can accept any fundamental data type supported by std::to_[w]string(), a 
+constant generic text string pointer, or a reference to an std::[w]string object:
 
-	Start(L"MyService", std::wstring(L"argumentone"), 11, 123.45, true, L"lastargument")
+	Start(L"MyService", std::wstring(L"argumentone"), 11, 123.45, true, L"lastargument");
+	Start(IDS_MYSERVICE_NAME);
 
 The simplest pattern for using ServiceHarness<> requires invoking the Start(servicename) method, waiting
 for some trigger to occur that will terminate the harness application, and then invoking Stop():
 
 	...
 	ServiceHarness<MyService> harness;
-	harness.Start(_T("MyServiceName"));
-
+	harness.Start(IDS_MYSERVICE_NAME);
 	// wait for some trigger here to stop the service test harness
 	harness.Stop();
 	...
 
+When using ServiceHarness<>, the parameters implementation of the service class is disabled and
+replaced with a harness-specific implementation.  Other than requiring they be set at runtime (see
+below), the only limitation as compared with the registry-based service class implementation is that
+the REG_EXPAND_SZ registry type is not supported; environment variables must be expanded prior to 
+setting a string parameter's value.
 
->> PARAMETERS DOCUMENTATION GOES HERE
-	need note about EXPAND_SZ, will not automatically expand variables like with registry
+ServiceHarness<> parameters can be set any time and are persistent within the lifetime of the harness
+instance, they are not cleared when the service is stopped.  After a service has been started, a change
+in a parameter's value will not become visible to the service class until a ServiceControl::ParameterChange
+control has been sent, the same behavior exhibited by a service running normally:
 	
+The SetParameter() method can accept a constant generic text string pointer, an std::[w]string reference,
+or a resource string id for the parameter name, and will infer the actual data type of the parameter value
+based on what is being provided.  If the inferred format does not match the member variable type in the
+service class, the value will not be propogated to the service at runtime, much like how an invalid
+registry value type would behave.
+
+	<type>                                 Inferred format                      Service<> declaration
+	------                                 ---------------                      ---------------------
+	8-bit integer                          ServiceParameterFormat::DWord        DWordParameter
+	16-bit integer                         ServiceParameterFormat::DWord        DWordParameter
+	32-bit integer                         ServiceParameterFormat::DWord        DWordParameter
+	64-bit integer                         ServiceParameterFormat::QWord        QWordParameter
+	const TCHAR*                           ServiceParameterFormat::String       StringParameter
+	const std::[w]string&                  ServiceParameterFormat::String       StringParameter
+	const TCHAR*[]                         ServiceParameterFormat::MultiString  MultiStringParameter
+	std::[w]string[]                       ServiceParameterFormat::MultiString  MultiStringParameter
+	std::initializer_list<const TCHAR*>    ServiceParameterFormat::MultiString  MultiStringParameter
+	std::initializer_list<std::[w]string>  ServiceParameterFormat::MultiString  MultiStringParameter
+	iterator<const TCHAR*> (1)             ServiceParameterFormat::MultiString  MultiStringParameter
+	iterator<std::[w]string> (1)           ServiceParameterFormat::MultiString  MultiStringParameter
+	[any other trivial data type]          ServiceParameterFormat::Binary       BinaryParameter
+
+	(1) - This method requires 2 <type> parameters be specified, a begin() iterator and an end() iterator
+
 	...
 	ServiceHarness<MyService> harness;
 	harness.SetParameter(_T("MyStringParameter"), _T("PathToAnInterestingFile"));
-	harness.SetParameter(_T("MyDWordParameter"), 0x12345678);
+	harness.SetParameter(IDS_MYDWORDPARAMETER, 0x12345678);
 	harness.Start(_T("MyServiceName"));
 
-	// parameters can be set at any time, service does not need to be stopped
-	harness.SetParameter(_T("StringArrayAfterStart"), { _T("String1"), _T("String2"), _T("String3") });
+	// parameters can be set at any time, but if the service is running, a ServiceControl::ParameterChange 
+	// control must be sent to reload them
+	harness.SetParameter(_T("MyMultiStringValue"), { _T("String1"), _T("String2"), _T("String3") });
+	harness.SetParameter(IDS_MYDWORDPARAMETER, 0);
+	harness.SendControl(ServiceControl::ParameterChange);
 	...
-
 
 ServiceHarness<> Methods:
 -------------------------
@@ -198,25 +261,15 @@ DWORD SendControl(ServiceControl control, DWORD eventtype, LPVOID eventdata)
 	- Sends a control code to the service, optionally specifying event information (this is not common)
 	- Returns a status code similar to Win32 API's ControlService() method, should not throw an exception
 
-void SetParameter(LPCTSTR name, <type>& value)
-void SetParameter(unsigned int name, <type>& value)
-	- Sets a local service parameter key/value pair with a format derived from <type>
+void SetParameter(const TCHAR* name, <type> value)
+void SetParameter(std::[w]string name, <type> value)
+void SetParameter(unsigned int name, <type> value)
+	- Sets a local service parameter key/value pair with a format derived from <type>; see table above
 	- unsigned int overload accepts a resource string id for the parameter name
 	- Throws ServiceException& on error
 
-		<type>                               Implied format                       Service<> declaration
-		------                               --------------                       ---------------------
-		8-bit integer                        ServiceParameterFormat::DWord        DWordParameter
-		16-bit integer                       ServiceParameterFormat::DWord        DWordParameter
-		32-bit integer                       ServiceParameterFormat::DWord        DWordParameter
-		64-bit integer                       ServiceParameterFormat::QWord        QWordParameter
-		const TCHAR*                         ServiceParameterFormat::String       StringParameter
-		const std::[w]string&                ServiceParameterFormat::String       StringParameter
-		std::initializer_list<const TCHAR*>  ServiceParameterFormat::MultiString  MultiStringParameter
-		// more MultiString overloads will come here
-		[any other trivial data type]        ServiceParameterFormat::Binary       BinaryParameter
-
-void Start(LPCTSTR servicename, ...)
+void Start(const TCHAR* servicename, ...)
+void Start(std::[w]string servicename, ...)
 void Start(unsigned int servicename, ...)
 	- Starts the service with the specified service name and optional command line arguments
 	- unsigned int overload accepts a resource string id for the service name

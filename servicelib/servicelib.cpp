@@ -139,6 +139,26 @@ const tstring resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
+// service::Abort (private)
+//
+// Abnormally terminates the service; does not return to the calling thread
+//
+// Arguments:
+//
+//	win32exitcode		- Win32 service exit code
+
+void service::Abort(DWORD win32exitcode)
+{
+	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
+
+	// Force the service status to STOPPED and exit the main service thread
+	SetStatus(ServiceStatus::Stopped, win32exitcode);
+	m_stopsignal.Set();
+
+	Sleep(INFINITE);				// Does not return to the calling thread
+}
+
+//-----------------------------------------------------------------------------
 // service::CloseParameterStore (private, static)
 //
 // Default implementation for closing parameter storage; uses the registry
@@ -173,7 +193,8 @@ DWORD service::Continue(void)
 	// Use a single pooled thread to invoke all of the CONTINUE handlers
 	std::async(std::launch::async, [=]() {
 
-		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr);
+		for(const auto& handler : Handlers) 
+			if(handler->Control == ServiceControl::Continue) InvokeHandlerWithAbort(handler, 0, nullptr);
 		SetStatus(ServiceStatus::Running);
 	});
 
@@ -220,7 +241,7 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 
 		// Invoke the service control handler; if a non-zero result is returned stop
 		// processing them and return that result back to the service control manager
-		DWORD result = iterator->Invoke(this, eventtype, eventdata);
+		DWORD result = InvokeHandlerWithAbort(iterator, eventtype, eventdata);
 		if(result != ERROR_SUCCESS) return result;
 		
 		handled = true;				// At least one handler was successfully invoked
@@ -229,6 +250,31 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Default for most service controls is to return ERROR_SUCCESS if it was handled
 	// and ERROR_CALL_NOT_IMPLEMENTED if no handler was present for the control
 	return (handled) ? ERROR_SUCCESS : ERROR_CALL_NOT_IMPLEMENTED;
+}
+
+//-----------------------------------------------------------------------------
+// service::InvokeHandlerWithAbort (private)
+//
+// Invokes a control handler instance and terminates the service if that handler
+// throws an exception.  Control handlers should never throw exceptions.
+//
+// Arguments:
+//
+//	handler		- Handler instance to be invoked
+//	eventtype	- Optional control event type code
+//	eventdata	- Optional control event data
+
+DWORD service::InvokeHandlerWithAbort(const std::unique_ptr<control_handler>& handler, DWORD eventtype, void* eventdata)
+{
+	DWORD result = ERROR_SUCCESS;
+
+	// Invoke the handler in a standard try/catch block; if a winexception is thrown
+	// use it's underlying win32 code as the service exit code, otherwise ERROR_PROCESS_ABORTED
+	try { result = handler->Invoke(this, eventtype, eventdata); }
+	catch(winexception& ex) { Abort(static_cast<DWORD>(ex.code())); }
+	catch(...) { Abort(ERROR_PROCESS_ABORTED); }
+
+	return result;			// <--- Do it this way to prevent C4715 warning
 }
 
 //-----------------------------------------------------------------------------
@@ -363,7 +409,8 @@ DWORD service::Pause(void)
 	// Use a single pooled thread to invoke all of the PAUSE handlers
 	std::async(std::launch::async, [=]() {
 
-		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr);
+		for(const auto& handler : Handlers) 
+			if(handler->Control == ServiceControl::Pause) InvokeHandlerWithAbort(handler, 0, nullptr);
 		SetStatus(ServiceStatus::Paused);
 	});
 
@@ -630,7 +677,8 @@ DWORD service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
 	// Use a single pooled thread to invoke all of the STOP handlers
 	std::async(std::launch::async, [=]() {
 
-		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr);
+		for(const auto& handler : Handlers) 
+			if(handler->Control == ServiceControl::Stop) InvokeHandlerWithAbort(handler, 0, nullptr);
 		SetStatus(ServiceStatus::Stopped, win32exitcode, serviceexitcode);
 
 		m_stopsignal.Set();				// Signal the exit from the main thread

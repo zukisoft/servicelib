@@ -876,10 +876,20 @@ namespace svctl {
 		// Wait hint used during the initial service START_PENDING status
 		const uint32_t STARTUP_WAIT_HINT = 5000;
 
+		// Abort
+		//
+		// Causes an abnormal termination of the service
+		void Abort(DWORD win32exitcode);
+
 		// ControlHandler
 		//
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
+
+		// InvokeHandlerWithAbort
+		//
+		// Invokes a control handler and aborts the service on an unhandled exception
+		DWORD InvokeHandlerWithAbort(const std::unique_ptr<control_handler>& handler, DWORD eventtype, void* eventdata);
 
 		// ServiceMain
 		//

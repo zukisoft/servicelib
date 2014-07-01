@@ -88,10 +88,8 @@ private:
 	//		DWORD	MyHandler(void)
 	//		DWORD	MyHandler(DWORD eventtype, void* eventdata)
 	//
-	// All handlers are invoked synchronously, tasks that would take a long time to
-	// process should kick off a worker thread (std::async works well for this), and
-	// return quickly.  Control handlers should never throw exceptions; if one is thrown
-	// the service will be terminated without invoking any registered Stop handlers.
+	// Control handlers should never throw exceptions; if one is thrown the service
+	// will be terminated without invoking any registered Stop handlers
 	//
 	void OnStop(void)
 	{

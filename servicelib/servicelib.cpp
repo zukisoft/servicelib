@@ -159,7 +159,7 @@ void service::Abort(DWORD win32exitcode)
 }
 
 //-----------------------------------------------------------------------------
-// service::CloseParameterStore (private, static)
+// service::CloseParameterStore (private)
 //
 // Default implementation for closing parameter storage; uses the registry
 //
@@ -348,7 +348,7 @@ const control_handler_table& service::getHandlers(void) const
 
 
 //-----------------------------------------------------------------------------
-// service::LoadParameter (private, static)
+// service::LoadParameter (private)
 //
 // Default implementation for loading a value from parameter storage
 //
@@ -372,7 +372,25 @@ size_t service::LoadParameter(void* handle, const tchar_t* name, ServiceParamete
 }
 
 //-----------------------------------------------------------------------------
-// service::OpenParameterStore (private, static)
+// service::LogException (protected)
+//
+// Invoked when the service base class has caught an unhandled exception
+//
+// Arguments:
+//
+//	ex			- Exception object
+//	context		- Context string where the exception occurred; may be nullptr
+
+void service::LogException(const winexception& ex, const tchar_t* context)
+{
+	// TODO: implement
+	UNREFERENCED_PARAMETER(ex);
+	UNREFERENCED_PARAMETER(context);
+}
+
+
+//-----------------------------------------------------------------------------
+// service::OpenParameterStore (private)
 //
 // Default implementation for opening parameter storage; uses the registry
 //

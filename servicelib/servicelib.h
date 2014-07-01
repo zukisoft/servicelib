@@ -807,6 +807,11 @@ namespace svctl {
 			instance->Main(static_cast<int>(argc), argv, context);
 		}
 
+		// LogException
+		//
+		// Invoked when an unhandled exception has been caught by the service base class
+		virtual void LogException(const winexception& ex, const tchar_t* context);
+
 		// OnStart
 		//
 		// Invoked when the service is started; must be implemented in the service

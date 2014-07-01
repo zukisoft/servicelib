@@ -5,45 +5,7 @@
 #include "servicelib.h"
 #include "resource.h"
 
-// MinimalService Sample
-//
-class MinimalService : public Service<MinimalService>
-{
-public:
-
-	// Constructor / Destructor
-	MinimalService()=default;
-	virtual ~MinimalService()=default;
-
-private:
-
-	MinimalService(const MinimalService&)=delete;
-	MinimalService& operator=(const MinimalService&)=delete;
-
-	// CONTROL_HANDLER_MAP
-	//
-	// Series of ATL-like macros that define a mapping of service
-	// control codes to handler functions
-	BEGIN_CONTROL_HANDLER_MAP(MinimalService)
-		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
-	END_CONTROL_HANDLER_MAP()
-
-	// OnStart (Service)
-	//
-	// Every service that derives from Service<> must define an OnStart()
-	void OnStart(int argc, LPTSTR* argv)
-	{
-		UNREFERENCED_PARAMETER(argc);
-		UNREFERENCED_PARAMETER(argv);
-	}
-
-	// OnStop
-	//
-	// Sample control handler for ServiceControl::Stop
-	void OnStop(void)
-	{
-	}
-};
+#include "MinimalService.h"
 
 class MyService : public Service<MyService>
 {
@@ -103,14 +65,23 @@ public:
 	//		OutputDebugString(L"MyService::CloseParameterStore -- correct handle\r\n");
 	//}
 
-	void OnStop(void)
+	DWORD OnStop(void)
 	{
 		//Sleep(5000);
-		int x = 123;
+		//int x = 123;
+		//OutputDebugString(L"returning E_UNEXPECTED\r\n");
+		//return E_UNEXPECTED;
+		throw ServiceException(ERROR_NOT_ENOUGH_MEMORY);
+	}
+
+	void OnParamChange(void)
+	{
+		throw ServiceException(E_FAIL);
 	}
 
 	BEGIN_CONTROL_HANDLER_MAP(MyService)
 		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
+		CONTROL_HANDLER_ENTRY(ServiceControl::ParameterChange, OnParamChange)
 	END_CONTROL_HANDLER_MAP()
 
 	BEGIN_PARAMETER_MAP(MyService)
@@ -139,32 +110,32 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
 #endif	// _DEBUG
 
-	struct test { 
+	//struct test { 
 
-		int me1;
-		int me2;
-	};
+	//	int me1;
+	//	int me2;
+	//};
 
-	test mytest;
+	//test mytest;
 
-	ServiceHarness<MyService> runner;
+	//ServiceHarness<MyService> runner;
 
-	runner.SetParameter(L"binarytest", mytest);
-	runner.SetParameter(L"parameter1", 0x123456);
-	runner.SetParameter(L"parameter2", 0x1);
-	runner.SetParameter(L"parameter3", 0x123456789);
-	runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
+	//runner.SetParameter(L"binarytest", mytest);
+	//runner.SetParameter(L"parameter1", 0x123456);
+	//runner.SetParameter(L"parameter2", 0x1);
+	//runner.SetParameter(L"parameter3", 0x123456789);
+	//runner.SetParameter(L"MyStringRegSz", { _T("MyValueSz"), _T("MyValueSz2") } );
 
-	runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
-	if(runner.CanStop) runner.Stop();
+	//runner.Start(IDS_MYSERVICE, 1, 1.0, true, svctl::tstring(L"sweet"), 14, L"last");
+	//if(runner.CanStop) runner.Stop();
 
-	runner.Start(IDS_MYSERVICE);
-	runner.Stop();
+	//runner.Start(IDS_MYSERVICE);
+	//runner.Stop();
 
 	//return 0;
 
 	// Manual dispatching with dynamic names
-	ServiceTable services = { ServiceTableEntry<MyService>(_T("MyService")), ServiceTableEntry<MinimalService>(IDS_MYSERVICE) };
+	ServiceTable services = { ServiceTableEntry<MyService>(IDS_MYSERVICE) };
 	services.Dispatch();
 }
 

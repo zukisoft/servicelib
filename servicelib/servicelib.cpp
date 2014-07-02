@@ -93,6 +93,23 @@ bool parameter_base::IsBound(void)
 }
 
 //-----------------------------------------------------------------------------
+// parameter_base::TryLoad
+//
+// Loads the parameter value from storage, will eat any thrown exception
+//
+// Arguments:
+//
+//	NONE
+
+bool parameter_base::TryLoad(void)
+{
+	try { Load(); }
+	catch(...) { return false; }
+
+	return true;
+}
+
+//-----------------------------------------------------------------------------
 // parameter_base::Unbind
 //
 // Unbinds the parameter from the parameter storage
@@ -425,7 +442,7 @@ DWORD service::Pause(void)
 void service::ReloadParameters(void)
 {
 	// This can be done asynchronously; just iterate each parameter and reload it's value from storage
-	std::async(std::launch::async, [=]() { IterateParameters([=](const tstring&, parameter_base& param) { param.Load(); }); });
+	std::async(std::launch::async, [=]() { IterateParameters([=](const tstring&, parameter_base& param) { param.TryLoad(); }); });
 }
 
 //-----------------------------------------------------------------------------
@@ -475,7 +492,7 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 		// Open the parameter storage for this instance and bind/load all service parameters
 		paramhandle = (context.OpenParameterStore) ? context.OpenParameterStore(argv[0]) : OpenParameterStore(argv[0]);
 		load_parameter_func paramloader = (context.LoadParameter) ? context.LoadParameter : std::bind(&service::LoadParameter, this, _1, _2, _3, _4, _5);
-		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(paramhandle, name.c_str(), paramloader); param.Load(); });
+		IterateParameters([=](const tstring& name, parameter_base& param) { param.Bind(paramhandle, name.c_str(), paramloader); param.TryLoad(); });
 
 		// Invoke derived service class startup code
 		OnStart(argc, argv);

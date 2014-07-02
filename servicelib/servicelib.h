@@ -536,6 +536,11 @@ namespace svctl {
 		// Loads the parameter value from storage
 		virtual void Load(void) = 0;
 
+		// TryLoad
+		//
+		// Loads the parameter valye from storage; eats all exceptions
+		bool TryLoad(void);
+
 		// Unbind
 		//
 		// Unbinds the parameter
@@ -701,14 +706,9 @@ namespace svctl {
 			std::lock_guard<std::recursive_mutex> critsec(m_lock);
 			if(!IsBound()) return;
 
-			try { 
-			
-				// Attempt to read the value from storage, and if successful clear defaulted flag
-				m_value = parameter_base::ReadValue<_type>(_format);
-				m_defaulted = false;
-			}
-			
-			catch(...) { /* TODO: SHOULD DO SOMETHING ON PARAMETER STORAGE EXCEPTION */ }
+			// Attempt to read the value from storage, and if successful clear defaulted flag
+			m_value = parameter_base::ReadValue<_type>(_format);
+			m_defaulted = false;
 		}
 
 		// m_defaulted

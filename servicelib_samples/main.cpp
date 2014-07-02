@@ -64,7 +64,7 @@ int APIENTRY _tWinMain(HINSTANCE instance, HINSTANCE previnstance, LPTSTR comman
 	ServiceTable services = { 
 		
 		ServiceTableEntry<MinimalService>(IDS_MINIMALSERVICE_NAME), 
-		ServiceTableEntry<ParameterService>(_T("ParameterService")) 
+		ServiceTableEntry<ParameterService>(IDS_PARAMETERSERVICE_NAME) 
 	};
 
 	services.Dispatch();

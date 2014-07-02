@@ -27,8 +27,18 @@
 //-----------------------------------------------------------------------------
 // MinimalService Sample
 //
-// MinimalService implements an extremely basic service that does nothing
-// other than start and stop
+// MinimalService implements an extremely basic service that does nothing other
+// than start and stop
+//
+// Installation/removal via sc:
+//
+//	sc create MinimalServiceSample binPath=[path to servicelib_samples.exe] type=share start=demand
+//	sc delete MinimalServiceSample
+//
+// Accepted controls:
+//
+//	START	- sc start MinimalServiceSample
+//	STOP	- sc stop MinimalServiceSample
 //
 class MinimalService : public Service<MinimalService>
 {

@@ -19,25 +19,14 @@ public:
 
 		std::vector<std::wstring> multisz = m_multitest;
 		auto multisz_auto = m_multitest.Value;
-
 		auto dword_auto = m_dwtest.Value;
 
-		// wow, that actually worked ^^^^^^^^
+		// Self-stop; could be useful model for trigger services
+		std::async(std::launch::async, [=]() { 
 
-		//throw ServiceException(5L);
-
-		//Sleep(5000);
-
-		//std::async(std::launch::async, [=]() { 
-		//
-		//	while(true) {
-		//		svctl::tstring param = m_paramtestsz;
-		//		OutputDebugString(param.c_str());
-		//		OutputDebugString(_T("\r\n"));
-		//		Sleep(100);
-		//	}
-		//});
-
+			Sleep(10000);
+			Stop();
+		});
 	}
 
 	//void* OpenParameterStore(LPCTSTR servicename)
@@ -66,21 +55,16 @@ public:
 
 	void OnStop(void)
 	{
-		//Sleep(5000);
-		//int x = 123;
-		//OutputDebugString(L"returning E_UNEXPECTED\r\n");
-		//return E_UNEXPECTED;
-		//throw ServiceException(ERROR_NOT_ENOUGH_MEMORY);
 	}
 
-	void OnParamChange(void)
-	{
-		throw ServiceException(E_FAIL);
-	}
+	//void OnParamChange(void)
+	//{
+	//	throw ServiceException(E_FAIL);
+	//}
 
 	BEGIN_CONTROL_HANDLER_MAP(MyService)
 		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
-		CONTROL_HANDLER_ENTRY(ServiceControl::ParameterChange, OnParamChange)
+		//CONTROL_HANDLER_ENTRY(ServiceControl::ParameterChange, OnParamChange)
 	END_CONTROL_HANDLER_MAP()
 
 	BEGIN_PARAMETER_MAP(MyService)

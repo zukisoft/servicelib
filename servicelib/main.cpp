@@ -5,7 +5,6 @@
 #include "servicelib.h"
 #include "resource.h"
 
-#include "MinimalService.h"
 
 class MyService : public Service<MyService>
 {

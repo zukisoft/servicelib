@@ -20,30 +20,28 @@
 // SOFTWARE.
 //-----------------------------------------------------------------------------
 
-#ifndef __MINIMALSERVICE_H_
-#define __MINIMALSERVICE_H_
+#ifndef __PARAMETERSERVICE_H_
+#define __PARAMETERSERVICE_H_
 #pragma once
 
-#include "servicelib.h"
-
 //-----------------------------------------------------------------------------
-// MinimalService Sample
+// ParameterService Sample
 //
-// MinimalService implements an extremely basic service that does nothing
-// other than start and stop
+// ParameterService illustrates a simple service that uses the parameter support
+// built into the service template library
 //
-class MinimalService : public Service<MinimalService>
+class ParameterService : public Service<ParameterService>
 {
 public:
 
 	// Constructor / Destructor
-	MinimalService()=default;
-	virtual ~MinimalService()=default;
+	ParameterService()=default;
+	virtual ~ParameterService()=default;
 
 private:
 
-	MinimalService(const MinimalService&)=delete;
-	MinimalService& operator=(const MinimalService&)=delete;
+	ParameterService(const ParameterService&)=delete;
+	ParameterService& operator=(const ParameterService&)=delete;
 
 	// CONTROL_HANDLER_MAP
 	//
@@ -52,7 +50,7 @@ private:
 	// is no handler defined in the CONTROL_HANDLER_MAP.  Failure to define a Stop
 	// handler will result in a service that can be started but never stopped.
 	//
-	BEGIN_CONTROL_HANDLER_MAP(MinimalService)
+	BEGIN_CONTROL_HANDLER_MAP(ParameterService)
 		CONTROL_HANDLER_ENTRY(ServiceControl::Stop, OnStop)
 	END_CONTROL_HANDLER_MAP()
 
@@ -97,5 +95,5 @@ private:
 	}
 };
 
-#endif	// __MINIMALSERVICE_H_
+#endif	// __PARAMETERSERVICE_H_
 

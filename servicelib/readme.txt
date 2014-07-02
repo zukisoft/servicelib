@@ -21,28 +21,83 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 >> GENERAL DOCUMENTATION HERE
+	- why I think this is awesome
 
 >> BRIEF HISTORY COMPARISON WITH OLD SVCTL (WHAT HAS BEEN REMOVED)
+	- put svctl code into a subfolder within servicelib for reference
+	- note that C++11 / STL was now a goal not a hindrance like in svctl
 
-- only going to cook in ServiceParameters, old aux classes gone
-- async handlers and event object handlers are gone
-- automatic status
-- etc.
+---------------
+SAMPLE SERVICES
+---------------
 
->> SAMPLE SERVICES
+The Service Template Library has a number of sample projects that illustrate it's usage, 
+probably much better than this readme file will be able to:
+
+(anticipated samples below; need to describe each)
+
+	- MinimalService		
+	- ParameterService
+	- PauseContinueService
+	- EventTracingService
+	- TriggerEventService (??)
+	- SocketService
+	- NamedPipeService
+	- RpcService (??)
+	- ComService (??)
 
 >> SERVICE TABLES 
+	- need to illustrate a main() function
+	- describe OWN vs SHARED processes
 
 >> INSTALL/REMOVE
-- with sc
-- with code
+	- with sc
+	- with WiX ?
+	- with code (may not be providing this; doesn't make a lot of sense in 2014 thanks to SC and WiX)
 
 >> SERVICE MODULES / AUTOMATING SERVICE TABLES AND INSTALL/REMOVE
+	- may or may not make these
 
 >> COM SERVICE (need comservice.h / comservice.cpp?)
 >> RPC SERVICE (need rpcservice.h / rpcservice.cpp?)
+	- probably not going to bring these forward from svctl, not the goal of servicelib
 
 >> HOW TO DEBUG SERVICES
+	- mention ServiceHarness<> as possibly better way for general debugging (below)
+
+----------------
+CONTROL HANDLERS
+----------------
+
+STOP/PAUSE/CONTINUE - describe automatic status
+	- not supposed to do this; doing it anwyway
+
+	- describe synchronous vs. asynchronous handlers
+	- describe when to use DWORD or (DWORD, void*) handlers
+	- touch on user controls, note that only void(void) should be used
+	- describe what controls are disabled during state changes
+	- trigger events?
+	- behavior when an exception is thrown from a handler
+
+The following table lists the supported service control codes, whether or not the handler will
+be called synchronously or asynchronously, and the suggested handler method signature:
+
+	Service Control                        Model         Suggested Handler Signature
+	---------------                        -----         ---------------------------
+
+	ServiceControl::Continue               Asynchronous  void OnContinue(void)
+	ServiceControl::HardwareProfileChange  Synchronous   DWORD OnHardwareProfileChange(DWORD eventtype, void* eventdata)
+	ServiceControl::ParameterChange        Synchronous   void OnParameterChange(void)
+	ServiceControl::Pause                  Asynchronous  void OnPause(void)
+	ServiceControl::PreShutdown            Synchronous   void OnPreShutdown(void)
+	ServiceControl::PowerEvent             Synchronous   DWORD OnPowerEvent(DWORD eventtype, void* eventdata)
+	ServiceControl::SessionChange          Synchronous   void OnSessionChange(DWORD eventtype, void* eventdata)
+	ServiceControl::Shutdown               Synchronous   void OnShutdown(void)
+	ServiceControl::Stop                   Asynchronous  void OnStop(void)
+	ServiceControl::TimeChange             Synchronous   void OnTimeChange(void)
+	ServiceControl::TriggerEvent           Synchronous   DWORD OnTriggerEvent(void)  *** todo: might change this; could use base class support
+	ServiceControl::UserModeReboot         Synchronous   void OnUserModeReboot(void)
+	[Custom: 128-255]                      Synchronous   void OnXxxxxxxxx(void)
 
 ------------------
 SERVICE PARAMETERS
@@ -79,7 +134,7 @@ or an empty vector<[w]string> (MultiStringParameter):
 		...
 		StringParameter m_mysz { _T("defaultvalue") };
 		DWordParameter m_mydword;
-		// todo: MultiStringParameter initializer is broken right now
+		// todo: MultiStringParameter initializer is broken right now - see servicelib.h todo
 		// MultiStringParameter m_multisz { _T("String1"), _T("String2"), _T("String3")}
 
 In order for the service to locate and bind each parameter, they must be exposed via
@@ -114,7 +169,7 @@ The auto keyword can be used in conjunction with the .Value property of any para
 object to simplify the declaration.  This is particularly useful when working with
 MultiStringParameters, as the underlying type is an std::vector<svctl::tstring> instance
 
-Correct way to declare and access parameters:
+Declaring and accessing parameters:
 
 	BEGIN_PARAMETER_MAP(MyService)
 		PARAMETER_ENTRY(_T("RetryCount"), m_retrycount)
@@ -126,9 +181,11 @@ Correct way to declare and access parameters:
 
 	void OnStart(DWORD argc, LPTSTR* argv)
 	{
+		// auto can be used with the .Value property, recommended for MultiStringParameter
 		auto tempdir = m_tempdir.Value;
-		CreateTempDirectoryToHoldInterestingStuff(tempdir);
-		...		
+		DoSomethingInterestingWithTheParameter(tempdir);
+			
+		// a specific type can also be used to read/copy the parameter value
 		uint32_t retrycount = m_retrycount;
 		while(--retrycount) { 
 			...
@@ -165,9 +222,9 @@ three protected methods (all three should be overridden):
 		- This function should not throw an exception
 
 
--------------------------------
-SERVICE TEST HARNESS (EXTERNAL)
--------------------------------
+--------------------
+SERVICE TEST HARNESS
+--------------------
 
 Services generated with the service template library can also be run under the context of a provided
 test harness class, ServiceHarness<>.  This class provides the ability to start, stop and send control

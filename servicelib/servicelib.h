@@ -667,7 +667,7 @@ namespace svctl {
 		
 		// TODO: This does not work in Visual C++ 2013, appears to be a bug in the compiler that 
 		// prevents using an initializer_list as a non-static member variable initializer.  This
-		// affects the ability for MultiStringParameter to accept default initialization
+		// affects the ability for MultiStringParameter to accept a default initialization
 		//
 		//parameter(std::initializer_list<_inittype> init) : m_value(init) {}
 

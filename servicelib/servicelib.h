@@ -708,7 +708,7 @@ namespace svctl {
 				m_defaulted = false;
 			}
 			
-			catch(...) { /* DO NOTHING ON STORAGE EXCEPTION */ }
+			catch(...) { /* TODO: SHOULD DO SOMETHING ON PARAMETER STORAGE EXCEPTION */ }
 		}
 
 		// m_defaulted
@@ -807,11 +807,6 @@ namespace svctl {
 			instance->Main(static_cast<int>(argc), argv, context);
 		}
 
-		// LogException
-		//
-		// Invoked when an unhandled exception has been caught by the service base class
-		virtual void LogException(const winexception& ex, const tchar_t* context);
-
 		// OnStart
 		//
 		// Invoked when the service is started; must be implemented in the service
@@ -884,17 +879,12 @@ namespace svctl {
 		// Abort
 		//
 		// Causes an abnormal termination of the service
-		void Abort(DWORD win32exitcode);
+		void Abort(std::exception_ptr exception);
 
 		// ControlHandler
 		//
 		// Service control request handler method
 		DWORD ControlHandler(ServiceControl control, DWORD eventtype, void* eventdata);
-
-		// InvokeHandlerWithAbort
-		//
-		// Invokes a control handler and aborts the service on an unhandled exception
-		DWORD InvokeHandlerWithAbort(const std::unique_ptr<control_handler>& handler, DWORD eventtype, void* eventdata);
 
 		// ServiceMain
 		//
@@ -918,6 +908,13 @@ namespace svctl {
 		void SetStatus(ServiceStatus status) { SetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
 		void SetStatus(ServiceStatus status, uint32_t win32exitcode) { SetStatus(status, win32exitcode, ERROR_SUCCESS); }
 		void SetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
+
+		// TrySetStatus
+		//
+		// Sets a new service status, does not allow exceptions to propogate
+		bool TrySetStatus(ServiceStatus status) { return TrySetStatus(status, ERROR_SUCCESS, ERROR_SUCCESS); }
+		bool TrySetStatus(ServiceStatus status, uint32_t win32exitcode) { return TrySetStatus(status, win32exitcode, ERROR_SUCCESS); }
+		bool TrySetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode);
 
 		// AcceptedControls
 		//

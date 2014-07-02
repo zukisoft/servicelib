@@ -65,13 +65,13 @@ public:
 	//		OutputDebugString(L"MyService::CloseParameterStore -- correct handle\r\n");
 	//}
 
-	DWORD OnStop(void)
+	void OnStop(void)
 	{
 		//Sleep(5000);
 		//int x = 123;
 		//OutputDebugString(L"returning E_UNEXPECTED\r\n");
 		//return E_UNEXPECTED;
-		throw ServiceException(ERROR_NOT_ENOUGH_MEMORY);
+		//throw ServiceException(ERROR_NOT_ENOUGH_MEMORY);
 	}
 
 	void OnParamChange(void)

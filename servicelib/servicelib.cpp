@@ -145,17 +145,20 @@ const tstring resstring::GetResourceString(unsigned int id, HINSTANCE instance)
 //
 // Arguments:
 //
-//	win32exitcode		- Win32 service exit code
+//	exception	- The unhandled exception that is aborting the service
 
-void service::Abort(DWORD win32exitcode)
+void service::Abort(std::exception_ptr exception)
 {
 	std::lock_guard<std::recursive_mutex> critsec(m_statuslock);
 
-	// Force the service status to STOPPED and exit the main service thread
-	SetStatus(ServiceStatus::Stopped, win32exitcode);
-	m_stopsignal.Set();
+	// If this is an svctl::winexception the code can be used to set the exit
+	// code for the service otherwise just use ERROR_UNHANDLED_EXCEPTION
+	try { std::rethrow_exception(exception); }
+	catch(winexception& ex) { TrySetStatus(ServiceStatus::Stopped, ex.code()); }
+	catch(...) { TrySetStatus(ServiceStatus::Stopped, ERROR_UNHANDLED_EXCEPTION); }
 
-	Sleep(INFINITE);				// Does not return to the calling thread
+	m_stopsignal.Set();				// Interrupt the main service thread wait
+	Sleep(INFINITE);				// Never return
 }
 
 //-----------------------------------------------------------------------------
@@ -188,14 +191,21 @@ DWORD service::Continue(void)
 
 	// Service has to be in a status of PAUSED to accept this control
 	if(m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
-	SetStatus(ServiceStatus::ContinuePending);
+	
+	// Set the status to CONTINUE_PENDING
+	try { SetStatus(ServiceStatus::ContinuePending); }
+	catch(...) { Abort(std::current_exception()); }
 
 	// Use a single pooled thread to invoke all of the CONTINUE handlers
 	std::async(std::launch::async, [=]() {
 
-		for(const auto& handler : Handlers) 
-			if(handler->Control == ServiceControl::Continue) InvokeHandlerWithAbort(handler, 0, nullptr);
-		SetStatus(ServiceStatus::Running);
+		try {
+
+			for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr);
+			SetStatus(ServiceStatus::Running);
+		}
+
+		catch(...) { Abort(std::current_exception()); }
 	});
 
 	return ERROR_SUCCESS;
@@ -241,8 +251,12 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 
 		// Invoke the service control handler; if a non-zero result is returned stop
 		// processing them and return that result back to the service control manager
-		DWORD result = InvokeHandlerWithAbort(iterator, eventtype, eventdata);
-		if(result != ERROR_SUCCESS) return result;
+		try { 
+
+			DWORD result = iterator->Invoke(this, eventtype, eventdata);
+			if(result != ERROR_SUCCESS) return result;
+		}
+		catch(...) { Abort(std::current_exception()); }
 		
 		handled = true;				// At least one handler was successfully invoked
 	}
@@ -250,31 +264,6 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	// Default for most service controls is to return ERROR_SUCCESS if it was handled
 	// and ERROR_CALL_NOT_IMPLEMENTED if no handler was present for the control
 	return (handled) ? ERROR_SUCCESS : ERROR_CALL_NOT_IMPLEMENTED;
-}
-
-//-----------------------------------------------------------------------------
-// service::InvokeHandlerWithAbort (private)
-//
-// Invokes a control handler instance and terminates the service if that handler
-// throws an exception.  Control handlers should never throw exceptions.
-//
-// Arguments:
-//
-//	handler		- Handler instance to be invoked
-//	eventtype	- Optional control event type code
-//	eventdata	- Optional control event data
-
-DWORD service::InvokeHandlerWithAbort(const std::unique_ptr<control_handler>& handler, DWORD eventtype, void* eventdata)
-{
-	DWORD result = ERROR_SUCCESS;
-
-	// Invoke the handler in a standard try/catch block; if a winexception is thrown
-	// use it's underlying win32 code as the service exit code, otherwise ERROR_PROCESS_ABORTED
-	try { result = handler->Invoke(this, eventtype, eventdata); }
-	catch(winexception& ex) { Abort(static_cast<DWORD>(ex.code())); }
-	catch(...) { Abort(ERROR_PROCESS_ABORTED); }
-
-	return result;			// <--- Do it this way to prevent C4715 warning
 }
 
 //-----------------------------------------------------------------------------
@@ -372,24 +361,6 @@ size_t service::LoadParameter(void* handle, const tchar_t* name, ServiceParamete
 }
 
 //-----------------------------------------------------------------------------
-// service::LogException (protected)
-//
-// Invoked when the service base class has caught an unhandled exception
-//
-// Arguments:
-//
-//	ex			- Exception object
-//	context		- Context string where the exception occurred; may be nullptr
-
-void service::LogException(const winexception& ex, const tchar_t* context)
-{
-	// TODO: implement
-	UNREFERENCED_PARAMETER(ex);
-	UNREFERENCED_PARAMETER(context);
-}
-
-
-//-----------------------------------------------------------------------------
 // service::OpenParameterStore (private)
 //
 // Default implementation for opening parameter storage; uses the registry
@@ -422,14 +393,21 @@ DWORD service::Pause(void)
 
 	// Service has to be in a status of RUNNING to accept this control
 	if(m_status != ServiceStatus::Running) return ERROR_CALL_NOT_IMPLEMENTED;
-	SetStatus(ServiceStatus::PausePending);
+	
+	// Set the service status to PAUSE_PENDING
+	try { SetStatus(ServiceStatus::PausePending); }
+	catch(...) { Abort(std::current_exception()); }
 
 	// Use a single pooled thread to invoke all of the PAUSE handlers
 	std::async(std::launch::async, [=]() {
 
-		for(const auto& handler : Handlers) 
-			if(handler->Control == ServiceControl::Pause) InvokeHandlerWithAbort(handler, 0, nullptr);
-		SetStatus(ServiceStatus::Paused);
+		try {
+
+			for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr);
+			SetStatus(ServiceStatus::Paused);
+		}
+
+		catch(...) { Abort(std::current_exception()); }
 	});
 
 	return ERROR_SUCCESS;
@@ -507,19 +485,10 @@ void service::Main(int argc, tchar_t** argv, const service_context& context)
 		WaitForSingleObject(m_stopsignal, INFINITE);
 	}
 
-	catch(winexception& ex) { 
-		
-		// Set the service to STOPPED on an unhandled winexception, translate ERROR_SUCCESS into ERROR_SERVICE_SPECIFIC
-		try { SetStatus(ServiceStatus::Stopped, (ex.code() != ERROR_SUCCESS) ? ex.code() : ERROR_SERVICE_SPECIFIC_ERROR); }
-		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
-	}
-
-	catch(...) { 
-		
-		// Set the service to STOPPED on an unhandled exception
-		try { SetStatus(ServiceStatus::Stopped, ERROR_SERVICE_SPECIFIC_ERROR, static_cast<DWORD>(E_FAIL)); }
-		catch(...) { /* CAN'T DO ANYTHING ELSE RIGHT NOW */ }
-	}
+	// Set the service to STOPPED on an unhandled winexception, translating ERROR_SUCCESS into ERROR_SERVICE_SPECIFIC.
+	// If the exception thrown is unknown use a generic ERROR_UNHANDLED_EXCEPTION as the stop code
+	catch(winexception& ex) { TrySetStatus(ServiceStatus::Stopped, (ex.code() != ERROR_SUCCESS) ? ex.code() : ERROR_SERVICE_SPECIFIC_ERROR); }
+	catch(...) { TrySetStatus(ServiceStatus::Stopped, ERROR_UNHANDLED_EXCEPTION); }
 
 	// Unbind all of the service parameters and close the parameter storage
 	IterateParameters([](const tstring&, parameter_base& param) { param.Unbind(); });
@@ -690,19 +659,47 @@ DWORD service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
 	// Service cannot be stopped unless it's RUNNING or PAUSED, this could cause
 	// potential race conditions in the derived service class; better to block it
 	if(m_status != ServiceStatus::Running && m_status != ServiceStatus::Paused) return ERROR_CALL_NOT_IMPLEMENTED;
-	SetStatus(ServiceStatus::StopPending);
+
+	// Set the service status to STOP_PENDING
+	try { SetStatus(ServiceStatus::StopPending); }
+	catch(...) { Abort(std::current_exception()); }
 
 	// Use a single pooled thread to invoke all of the STOP handlers
 	std::async(std::launch::async, [=]() {
 
-		for(const auto& handler : Handlers) 
-			if(handler->Control == ServiceControl::Stop) InvokeHandlerWithAbort(handler, 0, nullptr);
-		SetStatus(ServiceStatus::Stopped, win32exitcode, serviceexitcode);
+		try {
+
+			for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr);
+			SetStatus(ServiceStatus::Stopped, win32exitcode, serviceexitcode);
+		}
+
+		catch(...) { Abort(std::current_exception()); }
 
 		m_stopsignal.Set();				// Signal the exit from the main thread
 	});
 
 	return ERROR_SUCCESS;
+}
+
+//-----------------------------------------------------------------------------
+// service::TrySetStatus (private)
+//
+// Exception-safe version of SetStatus(), should only be used when an exception
+// cannot be dealt with, like when stopping the service from another exception
+//
+// Arguments:
+//
+//	status			- New service status to set
+//	win32exitcode	- Win32 specific exit code for ServiceStatus::Stopped (see documentation)
+//	serviceexitcode	- Service-specific exit code for ServiceStatus::Stopped (see documentation)
+
+bool service::TrySetStatus(ServiceStatus status, uint32_t win32exitcode, uint32_t serviceexitcode)
+{
+	// Attempt to change the service status and just eat any thrown exceptions
+	try { SetStatus(status, win32exitcode, serviceexitcode); }
+	catch(...) { return false; }
+
+	return true;
 }
 
 //-----------------------------------------------------------------------------

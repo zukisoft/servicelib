@@ -95,7 +95,7 @@ be called synchronously or asynchronously, and the suggested handler method sign
 	ServiceControl::Shutdown               Synchronous   void OnShutdown(void)
 	ServiceControl::Stop                   Asynchronous  void OnStop(void)
 	ServiceControl::TimeChange             Synchronous   void OnTimeChange(void)
-	ServiceControl::TriggerEvent           Synchronous   DWORD OnTriggerEvent(void)  *** todo: might change this; could use base class support
+	ServiceControl::TriggerEvent           Synchronous   void OnTriggerEvent(void)
 	ServiceControl::UserModeReboot         Synchronous   void OnUserModeReboot(void)
 	[Custom: 128-255]                      Synchronous   void OnXxxxxxxxx(void)
 

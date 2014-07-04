@@ -252,11 +252,17 @@ DWORD service::ControlHandler(ServiceControl control, DWORD eventtype, void* eve
 	else if(control == ServiceControl::Pause) { Pause(); return ERROR_SUCCESS; }
 	else if(control == ServiceControl::Continue) { Continue(); return ERROR_SUCCESS; }
 
+	// When a trigger event is received during service stop, ERROR_SHUTDOWN_IN_PROGRESS
+	// should be returned.  The service won't indicate that this is accepted, but the
+	// documentation in MSDN seems to imply that it may still get this control ...
+	if((control == ServiceControl::TriggerEvent) && (m_status == ServiceStatus::StopPending))
+		return ERROR_SHUTDOWN_IN_PROGRESS;
+
 	// Done with messing about with the current service status; release the critsec
 	critsec.unlock();
 
 	// PARAMCHANGE is automatically accepted if there are any parameters in the service,
-	// but the derived class may also want to handle it; call it here but don't return
+	// but may also have a service-defined handler so don't return after processing
 	if(control == ServiceControl::ParameterChange) ReloadParameters();
 
 	// Iterate over all of the implemented control handlers and invoke each of them

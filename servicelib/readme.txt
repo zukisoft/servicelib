@@ -40,7 +40,7 @@ probably much better than this readme file will be able to:
 	- ParameterService
 	- PauseContinueService
 	- EventTracingService
-	- TriggerEventService (??)
+	- TriggerEventService
 	- SocketService
 	- NamedPipeService
 	- RpcService (??)
@@ -49,6 +49,7 @@ probably much better than this readme file will be able to:
 >> SERVICE TABLES 
 	- need to illustrate a main() function
 	- describe OWN vs SHARED processes
+	- how to use multiple OWN services in a single executable (need command line)
 
 >> INSTALL/REMOVE
 	- with sc

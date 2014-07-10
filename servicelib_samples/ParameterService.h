@@ -74,7 +74,19 @@ private:
 		UNREFERENCED_PARAMETER(argc);
 		UNREFERENCED_PARAMETER(argv);
 
-		// Handle your service startup here - do not block the thread indefinitely
+		m_worker = std::move(std::thread([=]() { 
+		
+			auto waitms = m_messageRate.Value;
+			while(WaitForSingleObject(m_signal, waitms) == WAIT_TIMEOUT)
+			{
+				// do stuff
+				auto message = m_message.Value;
+
+				// Parameter values are only changed when a ServiceControl::ParameterChange
+				// has been received; re-read the value from cached storage each loop in this case
+				waitms = m_messageRate.Value;
+			}
+		}));
 	}
 
 	// Service Control Handlers
@@ -91,8 +103,23 @@ private:
 	//
 	void OnStop(void)
 	{
-		// Handle your service shutdown here
+		m_signal.Set();
+		if(!m_worker.joinable()) throw ServiceException(E_UNEXPECTED);
+		m_worker.join();
 	}
+
+	// PARAMETER_MAP
+	//
+	BEGIN_PARAMETER_MAP(MyService)
+		PARAMETER_ENTRY(_T("MessageRate"), m_messageRate)
+		PARAMETER_ENTRY(_T("Message"), m_message)
+	END_PARAMETER_MAP()
+
+	DWordParameter m_messageRate { 1000 };
+	StringParameter m_message { _T("Hello from ParameterService\r\n") };
+
+	svctl::signal<svctl::signal_type::AutomaticReset> m_signal;
+	std::thread m_worker;
 };
 
 #endif	// __PARAMETERSERVICE_H_

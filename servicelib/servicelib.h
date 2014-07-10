@@ -40,6 +40,7 @@
 #include <exception>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 // Windows API

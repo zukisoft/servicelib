@@ -1035,7 +1035,8 @@ bool service_harness::ServiceControlAccepted(ServiceControl control, DWORD mask)
 		case ServiceControl::TriggerEvent:			return ((mask & SERVICE_ACCEPT_TRIGGEREVENT) == SERVICE_ACCEPT_TRIGGEREVENT);
 		case ServiceControl::UserModeReboot:		return ((mask & SERVICE_ACCEPT_USERMODEREBOOT) == SERVICE_ACCEPT_USERMODEREBOOT);
 
-		default: return false;
+		// Allow any user-defined controls (128-255) to be passed to the service regardless of accept mask		
+		default: return ((static_cast<int>(control) >= 128) && (static_cast<int>(control) <= 255));
 	}
 }
 

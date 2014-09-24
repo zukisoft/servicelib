@@ -66,6 +66,13 @@ probably much better than this readme file will be able to:
 >> HOW TO DEBUG SERVICES
 	- mention ServiceHarness<> as possibly better way for general debugging (below)
 
+>> USING SHARED_PTR SERVICE CLASSES
+	- this is now enabled automatically if the service class derives from std::enable_shared_from_this<_derived>:
+		class MyService : public Service<MyService>, public std::enable_shared_from_this<MyService>
+	- will not activate with any other derivation of enable_shared_from_this, must be _derived
+	- caution on managing pointers, must all be released in OnStop() otherwise destructor will never be called
+	  and this could be really bad for shared process services
+
 ----------------
 CONTROL HANDLERS
 ----------------

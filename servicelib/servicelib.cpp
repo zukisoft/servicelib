@@ -791,6 +791,7 @@ std::vector<uint8_t>& service_harness::AppendToMultiStringBuffer(std::vector<uin
 
 void service_harness::CloseParameterStoreFunc(void* handle)
 {
+	UNREFERENCED_PARAMETER(handle);
 	_ASSERTE(handle == reinterpret_cast<void*>(this));
 }
 

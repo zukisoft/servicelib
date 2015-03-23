@@ -1137,7 +1137,6 @@ BOOL service_harness::SetStatusFunc(SERVICE_STATUS_HANDLE handle, LPSERVICE_STAT
 	if(reinterpret_cast<service_harness*>(handle) != this) { SetLastError(ERROR_INVALID_HANDLE); return FALSE; }
 
 	m_status = *status;						// Copy the new SERVICE_STATUS
-	critsec.unlock();						// Release the critical section
 	m_statuschanged.notify_all();			// Notify the status has been changed
 
 	return TRUE;

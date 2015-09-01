@@ -213,17 +213,14 @@ DWORD service::Continue(void)
 	try { SetStatus(ServiceStatus::ContinuePending); }
 	catch(...) { Abort(std::current_exception()); }
 
-	// Use a single pooled thread to invoke all of the CONTINUE handlers
-	std::async(std::launch::async, [=]() {
+	try {
 
-		try {
+		// Invoke all of the CONTINUE handlers prior to setting the service to RUNNING
+		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr);
+		SetStatus(ServiceStatus::Running);
+	}
 
-			for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Continue) handler->Invoke(this, 0, nullptr);
-			SetStatus(ServiceStatus::Running);
-		}
-
-		catch(...) { Abort(std::current_exception()); }
-	});
+	catch(...) { Abort(std::current_exception()); }
 
 	return ERROR_SUCCESS;
 }
@@ -421,17 +418,14 @@ DWORD service::Pause(void)
 	try { SetStatus(ServiceStatus::PausePending); }
 	catch(...) { Abort(std::current_exception()); }
 
-	// Use a single pooled thread to invoke all of the PAUSE handlers
-	std::async(std::launch::async, [=]() {
+	try {
 
-		try {
+		// Invoke all of the PAUSE handlers prior to setting the service to PAUSED
+		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr);
+		SetStatus(ServiceStatus::Paused);
+	}
 
-			for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Pause) handler->Invoke(this, 0, nullptr);
-			SetStatus(ServiceStatus::Paused);
-		}
-
-		catch(...) { Abort(std::current_exception()); }
-	});
+	catch(...) { Abort(std::current_exception()); }
 
 	return ERROR_SUCCESS;
 }
@@ -687,19 +681,16 @@ DWORD service::Stop(DWORD win32exitcode, DWORD serviceexitcode)
 	try { SetStatus(ServiceStatus::StopPending); }
 	catch(...) { Abort(std::current_exception()); }
 
-	// Use a single pooled thread to invoke all of the STOP handlers
-	std::async(std::launch::async, [=]() {
+	try {
 
-		try {
+		// Invoke all of the STOP handlers prior to setting the service to STOPPED
+		for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr);
+		SetStatus(ServiceStatus::Stopped, win32exitcode, serviceexitcode);
+	}
 
-			for(const auto& handler : Handlers) if(handler->Control == ServiceControl::Stop) handler->Invoke(this, 0, nullptr);
-			SetStatus(ServiceStatus::Stopped, win32exitcode, serviceexitcode);
-		}
+	catch(...) { Abort(std::current_exception()); }
 
-		catch(...) { Abort(std::current_exception()); }
-
-		m_stopsignal.Set();				// Signal the exit from the main thread
-	});
+	m_stopsignal.Set();				// Signal the exit from the main thread
 
 	return ERROR_SUCCESS;
 }

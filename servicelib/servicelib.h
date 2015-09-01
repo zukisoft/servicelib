@@ -664,7 +664,7 @@ namespace svctl {
 
 		// Constructors
 		parameter() { if(_zeroinit) zero_init(m_value); }
-		explicit parameter(_inittype defvalue) : m_value({defvalue}) {}
+		explicit parameter(_inittype defvalue) : m_value(defvalue) {}
 		
 		// TODO: This does not work in Visual C++ 2013, appears to be a bug in the compiler that 
 		// prevents using an initializer_list as a non-static member variable initializer.  This

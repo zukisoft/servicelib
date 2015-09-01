@@ -1516,11 +1516,10 @@ private:
 // CONTROL_HANDLER_MAP
 //
 // Used to declare the getHandlers virtual function implementation for the service.
-// PAUSE, CONTINUE and STOP handlers will be invoked asynchronously via a pooled thread
-// since they involve an automatic pending state change.  Any other handlers are invoked
-// inline from HandlerEx in the order that they are declared, it is up to the service
-// implementation to process them and return as promptly as possible.  Custom control codes
-// are supported but must fall in the range of 128 through 255 (See HandlerEx on MSDN)
+// Handlers are invoked inline from HandlerEx in the order that they are declared, it is
+// up to the service implementation to process them and return as promptly as possible.  
+// Custom control codes are supported but must fall in the range of 128 through 255 
+// (See HandlerEx on MSDN)
 //
 // Handler functions must be nonstatic member functions that adhere to one of the following
 // four function signatures.  An implicit ERROR_SUCCESS (0) is returned on behalf of the
